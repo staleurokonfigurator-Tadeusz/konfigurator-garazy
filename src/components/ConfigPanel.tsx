@@ -371,7 +371,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
       <Section title="Wymiary Główne" icon={<Maximize size={20} />}>
         <div className="space-y-6">
-        {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: 800, step: 10 }, { label: 'Długość', key: 'length' as const, min: 300, max: 1000, step: 10 }, { label: 'Wysokość', key: 'height' as const, min: 200, max: 350, step: 10 }].map(dim => (
+          {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: 1500, step: 10 }, { label: 'Długość', key: 'length' as const, min: 300, max: 1500, step: 10 }, { label: 'Wysokość', key: 'height' as const, min: 200, max: 400, step: 10 }].map(dim => (
             <div key={dim.key}>
               <div className="flex justify-between mb-2 text-sm font-semibold text-zinc-700"><label>{dim.label}</label><span className="bg-white px-2 py-1 rounded border text-[var(--theme)] font-bold">{config[dim.key]} cm</span></div>
               {!isReadOnly && <input type="range" min={dim.min} max={dim.max} step={dim.step} value={config[dim.key]} onChange={(e) => updateConfig(dim.key, Number(e.target.value))} className="w-full" style={{accentColor: 'var(--theme)'}} />}
@@ -422,23 +422,23 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
       </Section>
 
       <Section title="Parametry Bram" icon={<BoxSelect size={20} />}>
-        {!isReadOnly && (
-          <div className="mb-4 flex justify-between items-center">
-            <span className="text-sm font-medium text-zinc-700">Ilość bram (przód)</span>
-            <div className="flex gap-2 bg-white rounded-lg border border-zinc-200 p-1">
-              <button onClick={() => { if (gates.length === 2) removeElement(gates[1].id); if (gates.length === 0) addElement('gate', 'front'); }} className={`px-3 py-1 rounded-md text-sm ${gates.length === 1 ? 'bg-zinc-100 font-bold text-[var(--theme)]' : ''}`}>1</button>
-              <button onClick={() => { if (gates.length < 2) addElement('gate', 'front'); }} className={`px-3 py-1 rounded-md text-sm ${gates.length === 2 ? 'bg-zinc-100 font-bold text-[var(--theme)]' : ''}`}>2</button>
-            </div>
-          </div>
+        {gates.length === 0 && (
+            <div className="text-sm text-zinc-400 text-center py-4 bg-white border border-dashed rounded-lg mb-4">Brak bram. Przejdź do sekcji "Drzwi, Okna i Świetliki", wybierz ścianę i dodaj bramę.</div>
         )}
 
-        {config.roofType === 'slope-front' && <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">⚠️ Dach spadowy w przód — max. wysokość bramy ograniczona.</div>}
+        {config.roofType === 'slope-front' && gates.some(g => g.wall === 'front') && <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">⚠️ Dach spadowy w przód — max. wysokość bramy na froncie ograniczona.</div>}
 
         {gates.map((gate, i) => (
-          <div key={gate.id} className={`bg-white p-4 rounded-xl border-2 transition-all shadow-sm mb-3 ${activeDimId === gate.id ? 'border-[var(--theme)]' : 'border-zinc-200'}`}>
-            <div className="flex justify-between items-center mb-4">
+          <div key={gate.id} className={`bg-white p-4 rounded-xl border-2 transition-all shadow-sm mb-3 relative group ${activeDimId === gate.id ? 'border-[var(--theme)]' : 'border-zinc-200'}`}>
+            {!isReadOnly && (
+              <button onClick={() => removeElement(gate.id)} className="absolute top-4 right-4 text-red-400 hover:text-red-600 z-10"><Trash2 size={18}/></button>
+            )}
+            <div className="flex justify-between items-center mb-4 pr-8">
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-zinc-800">Brama #{i+1}</h3>
+                <span className="text-[10px] font-bold text-white bg-zinc-800 px-2 py-0.5 rounded uppercase">
+                    {gate.wall === 'front' ? 'Przód' : gate.wall === 'back' ? 'Tył' : gate.wall === 'left' ? 'Lewa' : 'Prawa'}
+                </span>
                 <button 
                   onClick={() => { setSelectedWall(gate.wall); setActiveDimId?.(activeDimId === gate.id ? null : gate.id); }} 
                   className={`p-1.5 rounded-lg transition-colors shadow-sm ${activeDimId === gate.id ? 'bg-[var(--theme)] text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-[var(--theme)]'}`} 
@@ -451,7 +451,6 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                 const nType = e.target.value as GateType;
                 let nWidth = gate.width;
                 if (nType === 'sectional' && nWidth < 300) nWidth = 300;
-                setSelectedWall('front'); 
                 updateElement(gate.id, { gateType: nType, width: nWidth, height: 200, isOpen: false }); 
               }} className="text-sm border-zinc-300 rounded-lg p-1 bg-zinc-50 text-zinc-900 font-bold disabled:opacity-80">
                 <option value="up-and-over">Uchylna</option><option value="sectional">Segmentowa</option>
@@ -459,7 +458,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
             </div>
             
             <div className="space-y-4 mb-3">
-            <div className="mb-2">
+              <div className="mb-2">
                 <label className="text-[10px] text-zinc-500 font-bold uppercase mb-1 block">Wymiar Bramy (Wys x Szer)</label>
                 <select 
                   disabled={isReadOnly}
@@ -471,8 +470,9 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                   className="w-full border-zinc-300 rounded-lg p-2 text-sm bg-zinc-50 text-zinc-900 font-bold disabled:opacity-80 focus:ring-2 focus:ring-[var(--theme)]"
                 >
                   {(() => {
-                    const otherGatesWidth = config.elements.filter(e => e.wall === gate.wall && e.id !== gate.id).reduce((sum, e) => sum + e.width + 20, 0);
-                    const availableWidth = config.width - otherGatesWidth;
+                    const wallW = (gate.wall === 'front' || gate.wall === 'back') ? config.width : config.length;
+                    const otherElemsWidth = config.elements.filter(e => e.wall === gate.wall && e.id !== gate.id).reduce((sum, e) => sum + e.width + 20, 0);
+                    const availableWidth = wallW - otherElemsWidth;
                     
                     if (gate.gateType === 'up-and-over') {
                       return (
@@ -501,7 +501,11 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                   <label className="text-[10px] text-zinc-500 font-bold uppercase">Przesunięcie w poziomie (cm)</label>
                   <input type="number" disabled={isReadOnly} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-16 border border-zinc-300 p-1 rounded text-xs bg-zinc-50 outline-none text-right disabled:opacity-80 disabled:cursor-not-allowed" />
                 </div>
-                {!isReadOnly && <input type="range" min={-(config.width / 2) + gate.width/2} max={(config.width / 2) - gate.width/2} step={5} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />}
+                {!isReadOnly && (() => {
+                  const wallW = (gate.wall === 'front' || gate.wall === 'back') ? config.width : config.length;
+                  const maxX = Math.max(0, Math.floor(wallW / 2) - Math.floor(gate.width / 2));
+                  return <input type="range" min={-maxX} max={maxX} step={5} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />;
+                })()}
               </div>
             </div>
 
@@ -534,6 +538,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         </div>
         {!isReadOnly && (
           <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+            <button onClick={() => addElement('gate')} className="flex-none bg-white border border-[var(--theme)] text-[var(--theme)] px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-[var(--theme)] hover:text-white transition-colors"><Plus size={16} /> Brama</button>
             <button onClick={() => addElement('door')} className="flex-none bg-white border border-zinc-300 text-zinc-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 hover:border-zinc-400"><Plus size={16} /> Drzwi</button>
             <button onClick={() => addElement('window')} className="flex-none bg-white border border-zinc-300 text-zinc-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 hover:border-zinc-400"><Plus size={16} /> Okno</button>
             <button onClick={() => addElement('skylight')} className="flex-none bg-white border border-zinc-300 text-zinc-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 hover:border-zinc-400"><Plus size={16} /> Świetlik (mb)</button>
@@ -566,7 +571,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                   </div>
 
                   <div className="space-y-4">
-                  {(el.type === 'window' || el.type === 'pvc-window') ? (
+                    {(el.type === 'window' || el.type === 'pvc-window') ? (
                       <div className="mb-2">
                         <label className="text-[10px] text-zinc-500 font-bold uppercase mb-1 block">Wymiar Okna (Wys x Szer)</label>
                         <select 
