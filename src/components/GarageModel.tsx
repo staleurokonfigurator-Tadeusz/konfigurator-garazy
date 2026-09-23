@@ -26,6 +26,17 @@ function resolveColor(colorId: string | undefined, colors: any[] = []): { hex: s
 
 const PANEL_COUNT = 5;
 
+// Mini komponent rysujący drzwi bezpośrednio na skrzydle bramy
+const DoorInGate = ({ xOffset, yOffset, thick, gateMatComponent }: { xOffset: number, yOffset: number, thick: number, gateMatComponent: any }) => (
+  <group position={[xOffset, yOffset, 0]}>
+    <mesh><boxGeometry args={[0.9, 1.9, thick + 0.012]} /><meshStandardMaterial color="#222" roughness={0.8} /></mesh>
+    <mesh position={[0,0,0]}><boxGeometry args={[0.84, 1.84, thick + 0.015]} />{gateMatComponent}</mesh>
+    <group position={[-0.35, 0, thick/2 + 0.025]}>
+      <mesh><sphereGeometry args={[0.025, 16, 16]} /><meshStandardMaterial color="#111" metalness={0.8} roughness={0.5} /></mesh>
+    </group>
+  </group>
+);
+
 function SectionalGate({ el, woodColor, woodNormal, trapezTex, trapezTexHoriz, woodColorHoriz, woodNormalHoriz, config, colors, loadedTextures }: any) {
   const groupRef = useRef<THREE.Group>(null);
   const progress = useRef(el.isOpen ? 1 : 0);
@@ -100,14 +111,26 @@ function AnimatedGate({ el, woodColor, woodNormal, trapezTex, trapezTexHoriz, wo
   if (el.gateType === 'swing') {
     return (
       <group ref={ref} position={[(el.x || 0) * 0.01, (el.y || 0) * 0.01, 0]}>
-        <group position={[-elW / 2, 0, 0]}><mesh position={[elW / 4, elH / 2, 0]} castShadow receiveShadow><boxGeometry args={[elW / 2 - 0.01, elH - 0.02, thick]} />{gateMatComponent}</mesh><group position={[elW / 2 - 0.1, elH / 2, thick / 2 + 0.025]}><mesh><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color="#333" roughness={0.5} metalness={0.8} /></mesh><mesh position={[0, -0.05, 0]}><cylinderGeometry args={[0.012, 0.012, 0.1, 8]} /><meshStandardMaterial color="#333" roughness={0.5} /></mesh></group></group>
-        <group position={[elW / 2, 0, 0]}><mesh position={[-elW / 4, elH / 2, 0]} castShadow receiveShadow><boxGeometry args={[elW / 2 - 0.01, elH - 0.02, thick]} />{gateMatComponent}</mesh><group position={[-elW / 2 + 0.1, elH / 2, thick / 2 + 0.025]}><mesh><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color="#333" roughness={0.5} metalness={0.8} /></mesh><mesh position={[0, -0.05, 0]}><cylinderGeometry args={[0.012, 0.012, 0.1, 8]} /><meshStandardMaterial color="#333" roughness={0.5} /></mesh></group></group>
+        <group position={[-elW / 2, 0, 0]}>
+          <mesh position={[elW / 4, elH / 2, 0]} castShadow receiveShadow><boxGeometry args={[elW / 2 - 0.01, elH - 0.02, thick]} />{gateMatComponent}</mesh>
+          <group position={[elW / 2 - 0.1, elH / 2, thick / 2 + 0.025]}><mesh><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color="#333" roughness={0.5} metalness={0.8} /></mesh><mesh position={[0, -0.05, 0]}><cylinderGeometry args={[0.012, 0.012, 0.1, 8]} /><meshStandardMaterial color="#333" roughness={0.5} /></mesh></group>
+        </group>
+        <group position={[elW / 2, 0, 0]}>
+          <mesh position={[-elW / 4, elH / 2, 0]} castShadow receiveShadow><boxGeometry args={[elW / 2 - 0.01, elH - 0.02, thick]} />{gateMatComponent}</mesh>
+          <group position={[-elW / 2 + 0.1, elH / 2, thick / 2 + 0.025]}><mesh><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color="#333" roughness={0.5} metalness={0.8} /></mesh><mesh position={[0, -0.05, 0]}><cylinderGeometry args={[0.012, 0.012, 0.1, 8]} /><meshStandardMaterial color="#333" roughness={0.5} /></mesh></group>
+          {el.hasDoor && <DoorInGate xOffset={-elW / 4} yOffset={0.95} thick={thick} gateMatComponent={gateMatComponent} />}
+        </group>
       </group>
     );
   }
+  
   return (
     <group ref={ref} position={[(el.x || 0) * 0.01, (el.y || 0) * 0.01, 0]}>
-      <group position={[0, elH, 0]}><mesh position={[0, -elH / 2, 0]} castShadow receiveShadow><boxGeometry args={[elW - 0.02, elH - 0.02, thick]} />{gateMatComponent}</mesh><group position={[handleXOffset, -elH + 0.25, thick / 2 + 0.025]}><mesh><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color="#333" roughness={0.5} metalness={0.8} /></mesh><mesh position={[0, -0.05, 0]}><cylinderGeometry args={[0.012, 0.012, 0.1, 8]} /><meshStandardMaterial color="#333" roughness={0.5} /></mesh></group></group>
+      <group position={[0, elH, 0]}>
+        <mesh position={[0, -elH / 2, 0]} castShadow receiveShadow><boxGeometry args={[elW - 0.02, elH - 0.02, thick]} />{gateMatComponent}</mesh>
+        <group position={[handleXOffset, -elH + 0.25, thick / 2 + 0.025]}><mesh><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color="#333" roughness={0.5} metalness={0.8} /></mesh><mesh position={[0, -0.05, 0]}><cylinderGeometry args={[0.012, 0.012, 0.1, 8]} /><meshStandardMaterial color="#333" roughness={0.5} /></mesh></group>
+        {el.hasDoor && <DoorInGate xOffset={elW / 4} yOffset={-elH + 0.95} thick={thick} gateMatComponent={gateMatComponent} />}
+      </group>
     </group>
   );
 }
@@ -147,7 +170,6 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       },
       undefined,
       () => {
-        // Fallback jeśli nie wgrasz obrazka z promptu
         const rTex = trapezTex.clone();
         rTex.wrapS = rTex.wrapT = THREE.RepeatWrapping;
         rTex.repeat.set(15, 3); 
@@ -163,6 +185,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       resolveColor(config.roofColor, colors).textureUrl,
       resolveColor(config.gateColor, colors).textureUrl,
       resolveColor(config.doorColor, colors).textureUrl,
+      resolveColor(config.windowColor, colors).textureUrl,
       resolveColor(config.cornerFlashingColor, colors).textureUrl,
       resolveColor(config.roofFlashingColor, colors).textureUrl,
       resolveColor(config.gutterColor, colors).textureUrl,
@@ -266,13 +289,15 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           if (isSide) xPos = isLeftWall ? ((l - 2*t) / 2 - (el.x || 0) * 0.01) : ((l - 2*t) / 2 + (el.x || 0) * 0.01);
 
           if (el.type === 'window' || el.type === 'pvc-window') {
-            const { hex: windowHex } = resolveColor(config.windowColor, colors);
-            const fc = windowHex && windowHex !== '#d4d4d4' ? windowHex : '#333';
+            const { hex: windowHex, isWood: isWinWood, textureUrl: winTexUrl } = resolveColor(config.windowColor, colors);
+            const winTex = isWinWood && winTexUrl && loadedTextures[winTexUrl] ? loadedTextures[winTexUrl] : undefined;
+            const fc = isWinWood ? '#ffffff' : (windowHex && windowHex !== '#d4d4d4' ? windowHex : '#333');
+            
             return (
               <group key={el.id} position={[xPos, elY + elH / 2, t / 2]}>
                 <mesh castShadow receiveShadow><boxGeometry args={[elW - 0.06, elH - 0.06, t - 0.02]} /><meshStandardMaterial color="#1a2a3a" opacity={0.55} transparent roughness={0.05} metalness={0.95} envMapIntensity={2.5} /></mesh>
-                <mesh><boxGeometry args={[elW, 0.04, t + 0.02]} /><meshStandardMaterial color={fc} roughness={0.3} metalness={0.6} /></mesh>
-                <mesh><boxGeometry args={[0.04, elH, t + 0.02]} /><meshStandardMaterial color={fc} roughness={0.3} metalness={0.6} /></mesh>
+                <mesh><boxGeometry args={[elW, 0.04, t + 0.02]} /><meshStandardMaterial color={fc} map={winTex} roughness={0.3} metalness={0.6} /></mesh>
+                <mesh><boxGeometry args={[0.04, elH, t + 0.02]} /><meshStandardMaterial color={fc} map={winTex} roughness={0.3} metalness={0.6} /></mesh>
               </group>
             );
           } else if (el.type === 'skylight') {
