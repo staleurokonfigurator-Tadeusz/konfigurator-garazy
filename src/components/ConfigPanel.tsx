@@ -1,10 +1,12 @@
 "use client";
 
 import { GarageConfig, RoofType, WallFace, GarageElement, GateType, SheetProfile } from '@/types';
-import { Home, Maximize, PaintBucket, Plus, Trash2, BoxSelect, Layers, ChevronDown, Edit2, Settings, Smartphone, Eye } from 'lucide-react';
+import { Home, Maximize, PaintBucket, Plus, Trash2, BoxSelect, Layers, ChevronDown, Edit2, Settings, Smartphone, Eye, FileText } from 'lucide-react';
 import { findValidPosition } from '@/lib/collision';
 import { v4 as uuidv4 } from 'uuid';
 import React, { useMemo, useState, Dispatch, SetStateAction } from 'react';
+import OfferDialog from '@/components/OfferDialog';
+import { getTrustedParentOrigin, postCheckoutToWordPress, WORDPRESS_MESSAGE_VERSION } from '@/lib/wordpressBridge';
 
 interface ConfigPanelProps {
   config: GarageConfig;
@@ -15,6 +17,9 @@ interface ConfigPanelProps {
   isGeneratingAR?: boolean;
   setIsGeneratingAR?: Dispatch<SetStateAction<boolean>>;
   isReadOnly?: boolean; 
+  isOfferMode?: boolean;
+  storeUrl?: string;
+  requestARExport?: () => Promise<Blob>;
   activeDimId?: string | null;
   setActiveDimId?: Dispatch<SetStateAction<string | null>>;
 }
@@ -51,10 +56,11 @@ const RoofIcon = ({ type }: { type: RoofType }) => {
   );
 };
 
-export default function ConfigPanel({ config, setConfig, selectedWall, setSelectedWall, appData, isGeneratingAR, setIsGeneratingAR, isReadOnly = false, activeDimId, setActiveDimId }: ConfigPanelProps) {
+export default function ConfigPanel({ config, setConfig, selectedWall, setSelectedWall, appData, isGeneratingAR, setIsGeneratingAR, isReadOnly = false, isOfferMode = false, storeUrl, requestARExport, activeDimId, setActiveDimId }: ConfigPanelProps) {
   const [activeColorEdit, setActiveColorEdit] = useState<string | null>(null);
   const [region, setRegion] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isOfferOpen, setIsOfferOpen] = useState(false);
   
   const pricing = appData?.pricing || {};
   const customAddons = appData?.addons || [];
@@ -72,7 +78,12 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     return groups;
   }, [dbColors]);
 
-  const getColorData = (id: string) => dbColors.find((c: any) => c.id === id) || { hex: '#d4d4d4', label: 'Brak danych', texture: '' };
+  const getColorData = (id: string) => {
+    const found = dbColors.find((c: any) => c.id === id);
+    if (found) return found;
+    if (id?.startsWith('#')) return { id, hex: id, label: id.toUpperCase(), texture: '' };
+    return { id, hex: '#d4d4d4', label: 'Brak danych', texture: '' };
+  };
 
   const safeNum = (val: any) => {
     const num = Number(val);
@@ -252,6 +263,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
       width, 
       height, 
       gateType: type === 'gate' ? 'up-and-over' : undefined, 
+      profile: type === 'gate' ? config.gateProfile : undefined,
       clearanceHeight: type === 'gate' ? 190 : undefined, 
       hingeSide: 'left' 
     };
@@ -264,7 +276,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     } else { alert("Brak miejsca na tej ścianie!"); }
   };
 
-  const updateElement = (id: string, updates: Partial<GarageElement & {hasDoor?: boolean}>) => {
+  const updateElement = (id: string, updates: Partial<GarageElement>) => {
     if (isReadOnly && !updates.hasOwnProperty('isOpen')) return; 
 
     setConfig(prev => {
@@ -301,21 +313,22 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         snapshotBase64 = canvas.toDataURL('image/jpeg', 0.6);
       }
 
-      const configString = JSON.stringify(config);
+      const targetOrigin = getTrustedParentOrigin(storeUrl || appData?.storeUrl);
+      if (!targetOrigin) throw new Error('Domena sklepu nie znajduje się na liście zaufanych domen.');
 
-      if (window.parent !== window) {
-        window.parent.postMessage({
-          action: 'konfigurator_checkout',
-          config: configString, 
-          price: calculatedPrice,
-          thumbnail: snapshotBase64
-        }, '*');
-      } else {
-        alert('Aplikacja musi być osadzona na stronie sklepu.');
-        setIsProcessing(false);
-      }
+      postCheckoutToWordPress({
+        action: 'konfigurator_checkout',
+        version: WORDPRESS_MESSAGE_VERSION,
+        config,
+        estimatedPrice: calculatedPrice,
+        // Pole pozostaje tymczasowo dla zgodności ze starszą wtyczką. Nowa
+        // wtyczka MUSI je ignorować i ponownie policzyć cenę po stronie serwera.
+        price: calculatedPrice,
+        thumbnail: snapshotBase64,
+      }, targetOrigin);
     } catch (error) {
       console.error('Błąd podczas finalizacji:', error);
+      alert(error instanceof Error ? error.message : 'Nie udało się bezpiecznie przekazać konfiguracji do sklepu.');
       setIsProcessing(false);
     }
   };
@@ -406,7 +419,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                 <div className="flex justify-between items-center mb-1"><label className="text-xs font-bold uppercase text-zinc-500">Szerokość wiaty (cm)</label><span className="font-bold text-[var(--theme)]">{config.carportWidth || 300}</span></div>
                 {!isReadOnly && <input type="range" min={100} max={500} step={10} value={config.carportWidth || 300} onChange={(e) => updateConfig('carportWidth', Number(e.target.value))} className="w-full" style={{accentColor: 'var(--theme)'}} />}
               </div>
-              
+
               <div>
                 <label className="text-xs font-bold uppercase text-zinc-500 block mb-2">Strona wiaty</label>
                 <div className="flex gap-2">
@@ -533,6 +546,25 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                   })()}
                 </select>
               </div>
+
+              {(gate.gateType === 'up-and-over' || gate.gateType === 'swing') && (
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase text-zinc-500">Przetłoczenie bramy</label>
+                  <select
+                    disabled={isReadOnly}
+                    value={gate.profile || config.gateProfile}
+                    onChange={(event) => updateElement(gate.id, { profile: event.target.value as SheetProfile })}
+                    className="w-full rounded-lg border-zinc-300 bg-zinc-50 p-2 text-sm font-bold text-zinc-900 disabled:opacity-80"
+                  >
+                    <option value="pionowe-t7">Pionowe T7</option>
+                    <option value="poziome-t7">Poziome T7</option>
+                    <option value="pionowe-t14">Pionowe T14</option>
+                    <option value="poziome-t14">Poziome T14</option>
+                    <option value="pionowe-t17">Pionowe T17</option>
+                    <option value="poziome-t17">Poziome T17</option>
+                  </select>
+                </div>
+              )}
               
               <div>
                 <div className="flex justify-between items-center mb-1">
@@ -548,7 +580,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                     <input 
                       type="checkbox" 
                       disabled={isReadOnly} 
-                      checked={(gate as any).hasDoor || false} 
+                      checked={gate.hasDoor || false}
                       onChange={(e) => updateElement(gate.id, { hasDoor: e.target.checked })} 
                       className="w-4 h-4 rounded text-[var(--theme)] focus:ring-[var(--theme)]" 
                     />
@@ -891,7 +923,16 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
           <Smartphone size={18} /> {isGeneratingAR ? 'Generowanie pakietu...' : 'Zobacz Garaż w AR (Na żywo)'}
         </button>
 
-        {!isReadOnly && (
+        {isOfferMode && (
+          <button
+            onClick={() => setIsOfferOpen(true)}
+            className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-orange-600 px-6 py-4 text-lg font-black uppercase text-white shadow-md transition-all hover:bg-orange-700"
+          >
+            <FileText size={20} /> Przygotuj ofertę
+          </button>
+        )}
+
+        {!isReadOnly && !isOfferMode && (
           <button 
             onClick={handleCheckout} 
             disabled={isProcessing}
@@ -901,6 +942,19 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
           </button>
         )}
       </div>
+
+      {isOfferOpen && (
+        <OfferDialog
+          config={config}
+          estimatedPrice={calculatedPrice}
+          colors={dbColors}
+          selectedWall={selectedWall}
+          setSelectedWall={setSelectedWall}
+          storeUrl={storeUrl || appData?.storeUrl}
+          requestARExport={requestARExport}
+          onClose={() => setIsOfferOpen(false)}
+        />
+      )}
     </div>
   );
 }

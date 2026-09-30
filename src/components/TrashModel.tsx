@@ -31,8 +31,8 @@ export default function TrashModel({ config, colors = [] }: TrashModelProps) {
   const t = 0.05; 
   const slopeH = 0.4; 
 
-  const [trapezTex] = useTexture(['/textures/trapez.jpg']);
-  const [woodNormal] = useTexture(['/textures/drewno-normal.jpg']);
+  const [trapezTex] = useTexture(['/textures/trapez.webp']);
+  const [woodNormal] = useTexture(['/textures/drewno-normal.webp']);
 
   const [dynamicWoodColor, setDynamicWoodColor] = useState<THREE.Texture | null>(null);
 

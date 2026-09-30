@@ -30,8 +30,8 @@ export default function PergolaModel({ config, colors = [] }: PergolaModelProps)
 
   const modulesCount = config.modulesCount || 1;
 
-  const [trapezTex] = useTexture(['/textures/trapez.jpg']);
-  const [woodNormal] = useTexture(['/textures/drewno-normal.jpg']);
+  const [trapezTex] = useTexture(['/textures/trapez.webp']);
+  const [woodNormal] = useTexture(['/textures/drewno-normal.webp']);
 
   // Kolor konstrukcji
   const [dynamicStructColor, setDynamicStructColor] = useState<THREE.Texture | null>(null);

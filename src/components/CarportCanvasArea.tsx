@@ -78,10 +78,11 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
 
 export default function CarportCanvasArea({ config, selectedWall, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
   return (
-    <Canvas gl={{ preserveDrawingBuffer: true }} shadows={{ type: THREE.PCFShadowMap as any }} camera={{ position: [5, 3, 7], fov: 50 }} className="w-full h-full">
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[10, 15, 10]} intensity={1.5} castShadow shadow-mapSize-width={2048} shadow-mapSize-height={2048} shadow-bias={-0.0005} shadow-camera-left={-15} shadow-camera-right={15} shadow-camera-top={15} shadow-camera-bottom={-15} />
-      <directionalLight position={[-10, 10, -10]} intensity={0.5} />
+    <Canvas dpr={[1, 1.5]} performance={{ min: 0.5 }} gl={{ preserveDrawingBuffer: true, powerPreference: 'high-performance', antialias: true }} onCreated={({ gl }) => { gl.outputColorSpace = THREE.SRGBColorSpace; gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1; }} shadows={{ type: THREE.PCFSoftShadowMap as any }} camera={{ position: [5, 3, 7], fov: 50 }} className="w-full h-full">
+      <ambientLight intensity={0.28} />
+      <hemisphereLight args={['#dbeafe', '#544b3e', 0.55]} />
+      <directionalLight position={[9, 13, 8]} intensity={1.75} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} shadow-bias={-0.0005} shadow-camera-left={-15} shadow-camera-right={15} shadow-camera-top={15} shadow-camera-bottom={-15} />
+      <directionalLight position={[-8, 7, -5]} intensity={0.32} color="#c7d2fe" />
 
       <Suspense fallback={null}>
         <CarportModel config={config} colors={colors} />

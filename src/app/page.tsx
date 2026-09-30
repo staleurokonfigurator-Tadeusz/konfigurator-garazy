@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, UIEvent, useEffect } from 'react';
+import React, { useState, UIEvent, useEffect, useRef, useCallback } from 'react';
 import { GarageConfig, WallFace } from '@/types';
 import ConfigPanel from '@/components/ConfigPanel';
 import CarportConfigPanel from '@/components/CarportConfigPanel';
@@ -28,7 +28,7 @@ const TrashCanvasArea = dynamic(() => import('@/components/TrashCanvasArea'), { 
 const INITIAL_CONFIG: GarageConfig = {
   width: 300, length: 500, height: 210,
   roofType: 'dual-slope', gutters: false,
-  elements: [{ id: uuidv4(), type: 'gate', wall: 'front', x: 0, y: 0, width: 250, height: 200, clearanceHeight: 190, gateType: 'up-and-over', hingeSide: 'left' }],
+  elements: [{ id: uuidv4(), type: 'gate', wall: 'front', x: 0, y: 0, width: 250, height: 200, clearanceHeight: 190, gateType: 'up-and-over', hingeSide: 'left', profile: 'pionowe-t7' }],
   applyColorToAll: false,
   removeFoil: false,
   roofColor: '#3b3b3c', roofProfile: 'pionowe-t14',
@@ -66,9 +66,12 @@ export default function Home() {
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [activeDimId, setActiveDimId] = useState<string | null>(null);
   const [wpAdminUrl, setWpAdminUrl] = useState("");
+  const [storeUrl, setStoreUrl] = useState("");
+  const [isOfferMode, setIsOfferMode] = useState(false);
 
   const [isGeneratingAR, setIsGeneratingAR] = useState<boolean>(false);
   const [arBlobUrl, setArBlobUrl] = useState<string | null>(null);
+  const offerExportRef = useRef<{ resolve: (blob: Blob) => void; reject: (error: Error) => void } | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -77,8 +80,15 @@ export default function Home() {
     const initDataRaw = params.get('init_data');
     const savedConfigBase64 = params.get('load_config');
     const storeUrl = params.get('store_url');
+    // Stan zależy od parametrów strony osadzającej i musi zostać odczytany po hydracji.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsOfferMode(params.get('offer_mode') === '1');
 
-    if (storeUrl) setWpAdminUrl(`${decodeURIComponent(storeUrl).replace(/\/$/, "")}/wp-admin/admin.php?page=garage-orders`);
+    if (storeUrl) {
+      const decodedStoreUrl = decodeURIComponent(storeUrl).replace(/\/$/, "");
+      setStoreUrl(decodedStoreUrl);
+      setWpAdminUrl(`${decodedStoreUrl}/wp-admin/admin.php?page=garage-orders`);
+    }
 
     if (initDataRaw) {
       try {
@@ -104,6 +114,10 @@ export default function Home() {
     }
   }, []); 
 
+  useEffect(() => () => {
+    if (arBlobUrl) URL.revokeObjectURL(arBlobUrl);
+  }, [arBlobUrl]);
+
   const handleScroll = (e: UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
     const scrollableHeight = target.scrollHeight - target.clientHeight;
@@ -115,20 +129,52 @@ export default function Home() {
     else setActiveStep(4);
   };
 
-  const handleExportAR = (url: string) => {
+  const handleExportAR = useCallback((url: string) => {
     setIsGeneratingAR(false);
+    if (offerExportRef.current) {
+      const pending = offerExportRef.current;
+      offerExportRef.current = null;
+      if (!url) {
+        pending.reject(new Error('Nie udało się wyeksportować modelu AR.'));
+        return;
+      }
+      fetch(url)
+        .then(response => response.blob())
+        .then(blob => pending.resolve(blob))
+        .catch(() => pending.reject(new Error('Nie udało się odczytać modelu AR.')))
+        .finally(() => URL.revokeObjectURL(url));
+      return;
+    }
     if (url) {
-      setArBlobUrl(url);
+      setArBlobUrl(previousUrl => {
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
+        return url;
+      });
     } else {
       alert("Wystąpił błąd podczas przygotowywania modelu AR. Odśwież stronę i spróbuj ponownie.");
     }
-  };
+  }, []);
+
+  const requestOfferARExport = useCallback(() => new Promise<Blob>((resolve, reject) => {
+    if (offerExportRef.current) {
+      reject(new Error('Eksport modelu AR jest już uruchomiony.'));
+      return;
+    }
+    offerExportRef.current = { resolve, reject };
+    setIsGeneratingAR(true);
+    window.setTimeout(() => {
+      if (!offerExportRef.current) return;
+      offerExportRef.current = null;
+      setIsGeneratingAR(false);
+      reject(new Error('Eksport modelu AR przekroczył limit czasu.'));
+    }, 45_000);
+  }), []);
 
   if (!appData) return <div className="flex h-screen items-center justify-center bg-zinc-900"><div className="animate-spin w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full"></div></div>;
 
   return (
     <>
-      <Script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js" strategy="lazyOnload" />
+      {arBlobUrl && <Script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js" strategy="afterInteractive" />}
 
       {arBlobUrl && (
         <div className="fixed inset-0 z-[999999] bg-zinc-900 flex flex-col">
@@ -224,6 +270,9 @@ export default function Home() {
                 isGeneratingAR={isGeneratingAR} 
                 setIsGeneratingAR={setIsGeneratingAR} 
                 isReadOnly={isReadOnly}
+                isOfferMode={isOfferMode}
+                storeUrl={storeUrl || appData?.storeUrl}
+                requestARExport={requestOfferARExport}
                 activeDimId={activeDimId} 
                 setActiveDimId={setActiveDimId}
               />

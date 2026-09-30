@@ -31,8 +31,8 @@ export default function CarportModel({ config, colors = [] }: CarportModelProps)
   const t = 0.05; // grubość dachu
   const slopeH = 0.4; // wysokość spadu dachu
 
-  const [trapezTex] = useTexture(['/textures/trapez.jpg']);
-  const [woodNormal] = useTexture(['/textures/drewno-normal.jpg']);
+  const [trapezTex] = useTexture(['/textures/trapez.webp']);
+  const [woodNormal] = useTexture(['/textures/drewno-normal.webp']);
 
   const [dynamicWoodColor, setDynamicWoodColor] = useState<THREE.Texture | null>(null);
 

@@ -1,10 +1,10 @@
 "use client";
 
 import { Canvas, useThree } from '@react-three/fiber';
-import { CameraControls, ContactShadows, Edges, Html, Line } from '@react-three/drei';
+import { CameraControls, ContactShadows, Edges, Html, Line, useTexture } from '@react-three/drei';
 import { GarageConfig, WallFace } from '@/types';
 import GarageModel from './GarageModel';
-import { Suspense, useEffect, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
 interface CanvasAreaProps {
@@ -113,6 +113,37 @@ function DimensionsOverlay({ config, activeId }: { config: GarageConfig, activeI
   );
 }
 
+function SceneGround({ config }: { config: GarageConfig }) {
+  const grassSource = useTexture('/textures/trawa.webp');
+  const grass = useMemo(() => {
+    const texture = grassSource.clone();
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(18, 18);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    texture.needsUpdate = true;
+    return texture;
+  }, [grassSource]);
+
+  useEffect(() => () => grass.dispose(), [grass]);
+
+  const drivewayWidth = Math.max(3.2, Math.min(6, config.width / 100));
+  const garageFront = config.length / 200;
+
+  return (
+    <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.035, 0]}>
+        <planeGeometry args={[60, 60]} />
+        <meshStandardMaterial map={grass} color="#8ca276" roughness={0.98} metalness={0} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.018, garageFront + 4]}>
+        <planeGeometry args={[drivewayWidth, 8]} />
+        <meshStandardMaterial color="#a7a29a" roughness={0.92} metalness={0.02} />
+      </mesh>
+    </group>
+  );
+}
+
 function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExport: (url: string) => void }) {
   const { scene } = useThree();
 
@@ -132,7 +163,7 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
         exporter.parse(
           garageGroup,
           (gltf) => {
-            const blob = new Blob([gltf as ArrayBuffer], { type: 'application/octet-stream' });
+            const blob = new Blob([gltf as ArrayBuffer], { type: 'model/gltf-binary' });
             const url = URL.createObjectURL(blob);
             onExport(url);
           },
@@ -148,7 +179,8 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
       }
     };
 
-    setTimeout(performExport, 500);
+    const timer = window.setTimeout(performExport, 500);
+    return () => window.clearTimeout(timer);
 
   }, [isGenerating, scene, onExport]);
 
@@ -157,21 +189,31 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
 
 export default function CanvasArea({ config, selectedWall, activeDimId, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
   return (
-    <Canvas gl={{ preserveDrawingBuffer: true }} shadows={{ type: THREE.PCFShadowMap as any }} camera={{ position: [5, 3, 7], fov: 50 }} className="w-full h-full">
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[10, 15, 10]} intensity={1.5} castShadow shadow-mapSize-width={2048} shadow-mapSize-height={2048} shadow-bias={-0.0005} shadow-camera-left={-15} shadow-camera-right={15} shadow-camera-top={15} shadow-camera-bottom={-15} />
-      <directionalLight position={[-10, 10, -10]} intensity={0.5} />
+    <Canvas
+      dpr={[1, 1.5]}
+      performance={{ min: 0.5 }}
+      gl={{ preserveDrawingBuffer: true, powerPreference: 'high-performance', antialias: true }}
+      onCreated={({ gl }) => {
+        gl.outputColorSpace = THREE.SRGBColorSpace;
+        gl.toneMapping = THREE.ACESFilmicToneMapping;
+        gl.toneMappingExposure = 1;
+      }}
+      shadows={{ type: THREE.PCFSoftShadowMap as any }}
+      camera={{ position: [5, 3, 7], fov: 50 }}
+      className="w-full h-full"
+    >
+      <ambientLight intensity={0.28} />
+      <hemisphereLight args={['#dbeafe', '#544b3e', 0.55]} />
+      <directionalLight position={[9, 13, 8]} intensity={1.75} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} shadow-bias={-0.0005} shadow-camera-left={-15} shadow-camera-right={15} shadow-camera-top={15} shadow-camera-bottom={-15} />
+      <directionalLight position={[-8, 7, -5]} intensity={0.32} color="#c7d2fe" />
 
       <Suspense fallback={null}>
         <GarageModel config={config} colors={colors} />
         {activeDimId && <DimensionsOverlay config={config} activeId={activeDimId} />}
+        <SceneGround config={config} />
       </Suspense>
 
-      <ContactShadows position={[0, -0.01, 0]} opacity={0.65} scale={40} blur={2.5} far={6} />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.02, 0]}>
-        <planeGeometry args={[60, 60]} />
-        <meshStandardMaterial color="#9a9488" roughness={0.92} metalness={0.02} />
-      </mesh>
+      <ContactShadows position={[0, -0.01, 0]} opacity={0.52} scale={30} blur={2.8} far={7} resolution={512} />
 
       <CameraRig selectedWall={selectedWall} config={config} activeDimId={activeDimId} />
       

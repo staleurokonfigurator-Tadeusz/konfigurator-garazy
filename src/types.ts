@@ -16,6 +16,8 @@ export interface GarageElement {
   hingeSide?: 'left' | 'right';
   gateType?: GateType;
   clearanceHeight?: number;
+  profile?: SheetProfile;
+  hasDoor?: boolean;
 }
 
 export interface GarageConfig {
