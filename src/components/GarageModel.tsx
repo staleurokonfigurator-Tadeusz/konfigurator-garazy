@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { Geometry, Base, Subtraction } from '@react-three/csg';
 import { useFrame } from '@react-three/fiber';
 import { Environment, useTexture } from '@react-three/drei';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 interface GarageModelProps {
   config: GarageConfig;
@@ -51,6 +52,173 @@ function createProfileBumpTexture(profile: SheetProfile) {
   texture.colorSpace = THREE.NoColorSpace;
   texture.needsUpdate = true;
   return texture;
+}
+
+type ProfileOpening = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type ProfileReliefSpec = {
+  spacing: number;
+  ridgeWidth: number;
+  ridgeDepth: number;
+  shoulderWidth: number;
+  shoulderDepth: number;
+};
+
+function getProfileReliefSpec(profile: SheetProfile): ProfileReliefSpec {
+  // T-7, T-14 i T-17 dostają celowo różne rozstawy i wysokości.
+  // Dzięki temu wzory są rozpoznawalne również z dalszej kamery, a nie
+  // tylko w zbliżeniu lub przy idealnym kącie światła.
+  if (profile.includes('t17')) {
+    return { spacing: 0.34, ridgeWidth: 0.032, ridgeDepth: 0.034, shoulderWidth: 0.105, shoulderDepth: 0.011 };
+  }
+  if (profile.includes('t14')) {
+    return { spacing: 0.22, ridgeWidth: 0.026, ridgeDepth: 0.026, shoulderWidth: 0.082, shoulderDepth: 0.009 };
+  }
+  return { spacing: 0.13, ridgeWidth: 0.018, ridgeDepth: 0.018, shoulderWidth: 0.058, shoulderDepth: 0.007 };
+}
+
+function subtractRange(ranges: Array<[number, number]>, cutStart: number, cutEnd: number) {
+  return ranges.flatMap(([start, end]) => {
+    if (cutEnd <= start || cutStart >= end) return [[start, end] as [number, number]];
+    const result: Array<[number, number]> = [];
+    if (cutStart > start) result.push([start, Math.min(cutStart, end)]);
+    if (cutEnd < end) result.push([Math.max(cutEnd, start), end]);
+    return result;
+  });
+}
+
+function createProfileReliefGeometry(
+  width: number,
+  height: number,
+  profile: SheetProfile,
+  openings: ProfileOpening[],
+  depthDirection: 1 | -1,
+) {
+  const spec = getProfileReliefSpec(profile);
+  const isHorizontal = profile.startsWith('poziome');
+  const parts: THREE.BufferGeometry[] = [];
+  const clearance = 0.018;
+
+  const addProfilePart = (
+    partWidth: number,
+    partHeight: number,
+    x: number,
+    y: number,
+    depth: number,
+  ) => {
+    if (partWidth <= 0.008 || partHeight <= 0.008) return;
+    const geometry = new THREE.BoxGeometry(partWidth, partHeight, depth);
+    geometry.translate(x, y, depthDirection * depth / 2);
+    parts.push(geometry);
+  };
+
+  if (isHorizontal) {
+    const count = Math.max(1, Math.floor(height / spec.spacing) + 1);
+    const startY = -((count - 1) * spec.spacing) / 2;
+    for (let index = 0; index < count; index += 1) {
+      const y = startY + index * spec.spacing;
+      let ranges: Array<[number, number]> = [[-width / 2, width / 2]];
+      openings.forEach((opening) => {
+        const crossesOpening = Math.abs(y - opening.y) <= opening.height / 2 + spec.shoulderWidth / 2 + clearance;
+        if (crossesOpening) {
+          ranges = subtractRange(
+            ranges,
+            opening.x - opening.width / 2 - clearance,
+            opening.x + opening.width / 2 + clearance,
+          );
+        }
+      });
+
+      ranges.forEach(([start, end]) => {
+        const segmentWidth = end - start;
+        const centerX = (start + end) / 2;
+        addProfilePart(segmentWidth, spec.shoulderWidth, centerX, y, spec.shoulderDepth);
+        addProfilePart(segmentWidth, spec.ridgeWidth, centerX, y, spec.ridgeDepth);
+      });
+    }
+  } else {
+    const count = Math.max(1, Math.floor(width / spec.spacing) + 1);
+    const startX = -((count - 1) * spec.spacing) / 2;
+    for (let index = 0; index < count; index += 1) {
+      const x = startX + index * spec.spacing;
+      let ranges: Array<[number, number]> = [[-height / 2, height / 2]];
+      openings.forEach((opening) => {
+        const crossesOpening = Math.abs(x - opening.x) <= opening.width / 2 + spec.shoulderWidth / 2 + clearance;
+        if (crossesOpening) {
+          ranges = subtractRange(
+            ranges,
+            opening.y - opening.height / 2 - clearance,
+            opening.y + opening.height / 2 + clearance,
+          );
+        }
+      });
+
+      ranges.forEach(([start, end]) => {
+        const segmentHeight = end - start;
+        const centerY = (start + end) / 2;
+        addProfilePart(spec.shoulderWidth, segmentHeight, x, centerY, spec.shoulderDepth);
+        addProfilePart(spec.ridgeWidth, segmentHeight, x, centerY, spec.ridgeDepth);
+      });
+    }
+  }
+
+  const merged = parts.length > 0 ? mergeGeometries(parts, false) : new THREE.BufferGeometry();
+  parts.forEach((part) => part.dispose());
+  merged?.computeVertexNormals();
+  return merged || new THREE.BufferGeometry();
+}
+
+function ProfileReliefSurface({
+  width,
+  height,
+  profile,
+  openings = [],
+  depthDirection = 1,
+  position = [0, 0, 0],
+  color,
+  colorMap,
+  normalMap,
+  isWood,
+}: {
+  width: number;
+  height: number;
+  profile: SheetProfile;
+  openings?: ProfileOpening[];
+  depthDirection?: 1 | -1;
+  position?: [number, number, number];
+  color: string;
+  colorMap?: THREE.Texture;
+  normalMap?: THREE.Texture;
+  isWood: boolean;
+}) {
+  const openingsKey = JSON.stringify(openings);
+  const normalizedOpenings = useMemo<ProfileOpening[]>(() => JSON.parse(openingsKey), [openingsKey]);
+  const geometry = useMemo(
+    () => createProfileReliefGeometry(width, height, profile, normalizedOpenings, depthDirection),
+    [width, height, profile, normalizedOpenings, depthDirection],
+  );
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return (
+    <mesh position={position} geometry={geometry} castShadow receiveShadow>
+      <meshStandardMaterial
+        key={`profile-relief-${profile}-${color}-${colorMap?.uuid || 'solid'}`}
+        color={isWood ? '#ffffff' : color}
+        map={colorMap}
+        normalMap={normalMap}
+        normalScale={normalMap ? new THREE.Vector2(0.42, 0.42) : undefined}
+        roughness={isWood ? 0.6 : 0.44}
+        metalness={isWood ? 0.04 : 0.3}
+        envMapIntensity={0.92}
+      />
+    </mesh>
+  );
 }
 
 type RoofSlopeAxis = 'x' | 'z';
@@ -182,8 +350,8 @@ function SectionalGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHo
   });
 
   const { hex: gateHex, isWood, textureUrl } = resolveColor(config?.gateColor, colors);
-  const gateProfile = (el.profile || config?.gateProfile) as SheetProfile;
-  const isHorizontal = gateProfile?.startsWith('poziome') || el.gateType === 'sectional';
+  const gateProfile = ((el.profile || config?.gateProfile) || 'pionowe-t7') as SheetProfile;
+  const isHorizontal = gateProfile.startsWith('poziome');
   const baseWoodColor = textureUrl && loadedTextures[textureUrl] ? loadedTextures[textureUrl] : woodColor;
   const baseWoodColorHoriz = textureUrl && loadedTextures[`${textureUrl}_horiz`] ? loadedTextures[`${textureUrl}_horiz`] : woodColorHoriz;
   const activeColorMap = isWood ? (isHorizontal ? baseWoodColorHoriz : baseWoodColor) : undefined;
@@ -198,6 +366,16 @@ function SectionalGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHo
             <boxGeometry args={[elW - 0.02, panelH - 0.005, thick]} />
             <meshStandardMaterial key={`sectional-${config.gateColor}-${gateProfile}`} map={activeColorMap} normalMap={activeNormalMap} normalScale={isWood ? new THREE.Vector2(0.48, 0.48) : undefined} bumpMap={profileMap} bumpScale={0.14} color={isWood ? '#ffffff' : gateHex} roughness={isWood ? 0.62 : 0.48} metalness={isWood ? 0.05 : 0.28} envMapIntensity={0.85} />
           </mesh>
+          <ProfileReliefSurface
+            width={elW - 0.025}
+            height={panelH - 0.012}
+            profile={gateProfile}
+            position={[0, 0, thick / 2 + 0.002]}
+            color={gateHex}
+            colorMap={activeColorMap}
+            normalMap={activeNormalMap}
+            isWood={isWood}
+          />
         </group>
       ))}
     </group>
@@ -221,8 +399,8 @@ function AnimatedGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHor
   if (el.gateType === 'sectional') return <SectionalGate el={el} woodColor={woodColor} woodNormal={woodNormal} woodColorHoriz={woodColorHoriz} woodNormalHoriz={woodNormalHoriz} profileTextures={profileTextures} config={config} colors={colors} loadedTextures={loadedTextures} />;
 
   const { hex: gateHex, isWood, textureUrl } = resolveColor(config?.gateColor, colors);
-  const gateProfile = (el.profile || config?.gateProfile) as SheetProfile;
-  const isHorizontal = gateProfile?.startsWith('poziome');
+  const gateProfile = ((el.profile || config?.gateProfile) || 'pionowe-t7') as SheetProfile;
+  const isHorizontal = gateProfile.startsWith('poziome');
   const baseWoodColor = textureUrl && loadedTextures[textureUrl] ? loadedTextures[textureUrl] : woodColor;
   const baseWoodColorHoriz = textureUrl && loadedTextures[`${textureUrl}_horiz`] ? loadedTextures[`${textureUrl}_horiz`] : woodColorHoriz;
   const activeColorMap = isWood ? (isHorizontal ? baseWoodColorHoriz : baseWoodColor) : undefined;
@@ -238,10 +416,12 @@ function AnimatedGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHor
       <group ref={ref} position={[(el.x || 0) * 0.01, (el.y || 0) * 0.01, 0]}>
         <group position={[-elW / 2, 0, 0]}>
           <mesh position={[elW / 4, elH / 2, 0]} castShadow receiveShadow><boxGeometry args={[elW / 2 - 0.01, elH - 0.02, thick]} />{gateMatComponent}</mesh>
+          <ProfileReliefSurface width={elW / 2 - 0.018} height={elH - 0.028} profile={gateProfile} position={[elW / 4, elH / 2, thick / 2 + 0.002]} color={gateHex} colorMap={activeColorMap} normalMap={activeNormalMap} isWood={isWood} />
           <group position={[elW / 2 - 0.1, elH / 2, thick / 2 + 0.025]}><mesh><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color="#333" roughness={0.5} metalness={0.8} /></mesh><mesh position={[0, -0.05, 0]}><cylinderGeometry args={[0.012, 0.012, 0.1, 8]} /><meshStandardMaterial color="#333" roughness={0.5} /></mesh></group>
         </group>
         <group position={[elW / 2, 0, 0]}>
           <mesh position={[-elW / 4, elH / 2, 0]} castShadow receiveShadow><boxGeometry args={[elW / 2 - 0.01, elH - 0.02, thick]} />{gateMatComponent}</mesh>
+          <ProfileReliefSurface width={elW / 2 - 0.018} height={elH - 0.028} profile={gateProfile} position={[-elW / 4, elH / 2, thick / 2 + 0.002]} color={gateHex} colorMap={activeColorMap} normalMap={activeNormalMap} isWood={isWood} />
           <group position={[-elW / 2 + 0.1, elH / 2, thick / 2 + 0.025]}><mesh><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color="#333" roughness={0.5} metalness={0.8} /></mesh><mesh position={[0, -0.05, 0]}><cylinderGeometry args={[0.012, 0.012, 0.1, 8]} /><meshStandardMaterial color="#333" roughness={0.5} /></mesh></group>
           {el.hasDoor && <DoorInGate xOffset={-elW / 4} yOffset={0.95} thick={thick} gateMatComponent={gateMatComponent} />}
         </group>
@@ -253,6 +433,7 @@ function AnimatedGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHor
     <group ref={ref} position={[(el.x || 0) * 0.01, (el.y || 0) * 0.01, 0]}>
       <group position={[0, elH, 0]}>
         <mesh position={[0, -elH / 2, 0]} castShadow receiveShadow><boxGeometry args={[elW - 0.02, elH - 0.02, thick]} />{gateMatComponent}</mesh>
+        <ProfileReliefSurface width={elW - 0.028} height={elH - 0.028} profile={gateProfile} position={[0, -elH / 2, thick / 2 + 0.002]} color={gateHex} colorMap={activeColorMap} normalMap={activeNormalMap} isWood={isWood} />
         <group position={[handleXOffset, -elH + 0.25, thick / 2 + 0.025]}><mesh><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color="#333" roughness={0.5} metalness={0.8} /></mesh><mesh position={[0, -0.05, 0]}><cylinderGeometry args={[0.012, 0.012, 0.1, 8]} /><meshStandardMaterial color="#333" roughness={0.5} /></mesh></group>
         {el.hasDoor && <DoorInGate xOffset={elW / 4} yOffset={-elH + 0.95} thick={thick} gateMatComponent={gateMatComponent} />}
       </group>
@@ -445,6 +626,53 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     });
   };
 
+  const getProfileOpenings = (wall: WallFace, isSide = false, isLeftWall = false): ProfileOpening[] => {
+    return (config.elements || []).filter(e => e.wall === wall).map((el) => {
+      let xShape = (el.x || 0) * 0.01;
+      if (isSide) {
+        xShape = isLeftWall
+          ? ((l - 2 * t) / 2 - (el.x || 0) * 0.01)
+          : ((l - 2 * t) / 2 + (el.x || 0) * 0.01);
+      }
+
+      return {
+        x: isSide ? xShape - l / 2 : xShape,
+        y: (el.y || 0) * 0.01 + ((el.height || 0) * 0.01) / 2 - h / 2,
+        width: (el.width || 0) * 0.01,
+        height: (el.height || 0) * 0.01,
+      };
+    });
+  };
+
+  const renderWallRelief = (
+    wall: WallFace,
+    pos: [number, number, number],
+    rotY: number,
+    isSide = false,
+    isLeftWall = false,
+  ) => {
+    const profile = (config.wallProfile || 'pionowe-t7') as SheetProfile;
+    const depthDirection: 1 | -1 = isLeftWall ? -1 : 1;
+    const surfaceZ = isLeftWall ? -0.002 : t + 0.002;
+
+    return (
+      <group position={pos} rotation={[0, rotY, 0]}>
+        <ProfileReliefSurface
+          width={isSide ? l : w}
+          height={h}
+          profile={profile}
+          openings={getProfileOpenings(wall, isSide, isLeftWall)}
+          depthDirection={depthDirection}
+          position={[isSide ? l / 2 : 0, h / 2, surfaceZ]}
+          color={wallHex}
+          colorMap={activeWallColorMap}
+          normalMap={activeWallNormalMap}
+          isWood={isWallWood}
+        />
+      </group>
+    );
+  };
+
   const renderElements = (wall: WallFace, pos: [number, number, number], rotY: number, isSide = false, isLeftWall = false) => {
     return (
       <group position={pos} rotation={[0, rotY, 0]}>
@@ -484,6 +712,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
             return (
               <group key={el.id} position={[xPos, elY + elH / 2, t / 2]}>
                 <mesh castShadow receiveShadow><boxGeometry args={[elW - 0.02, elH - 0.02, t + 0.01]} /><meshStandardMaterial key={`door-${config.doorColor}-${config.doorProfile}`} map={activeColorMap} normalMap={activeNormalMap} normalScale={isDoorWood ? new THREE.Vector2(0.48, 0.48) : undefined} bumpMap={doorProfileMap} bumpScale={0.15} color={isDoorWood ? '#ffffff' : doorHex} roughness={isDoorWood ? 0.62 : 0.48} metalness={isDoorWood ? 0.05 : 0.28} envMapIntensity={0.85} /></mesh>
+                <ProfileReliefSurface width={elW - 0.028} height={elH - 0.028} profile={(config.doorProfile || 'pionowe-t7') as SheetProfile} position={[0, 0, (t + 0.01) / 2 + 0.002]} color={doorHex} colorMap={activeColorMap} normalMap={activeNormalMap} isWood={isDoorWood} />
                 <group position={[handleXOffset, 0, t / 2 + 0.025]}><mesh><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color="#333" roughness={0.5} metalness={0.8} /></mesh><mesh position={[0, -0.05, 0]}><cylinderGeometry args={[0.012, 0.012, 0.1, 8]} /><meshStandardMaterial color="#333" roughness={0.5} /></mesh></group>
                 <mesh position={[hingeXOffset, elH / 3, t / 2 + 0.01]}><boxGeometry args={[0.02, 0.08, 0.02]} /><meshStandardMaterial color="#333" /></mesh>
                 <mesh position={[hingeXOffset, -elH / 3, t / 2 + 0.01]}><boxGeometry args={[0.02, 0.08, 0.02]} /><meshStandardMaterial color="#333" /></mesh>
@@ -741,15 +970,19 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
 
         <group>
           <mesh position={[0, 0, l / 2 - t]} castShadow receiveShadow><Geometry><Base><extrudeGeometry args={[createGarageFrontShape(), wallExtrude]} /></Base>{getSubtractions('front')}</Geometry>{wallMaterialComponent}</mesh>
+          {renderWallRelief('front', [0, 0, l / 2 - t], 0)}
           {renderElements('front', [0, 0, l / 2 - t], 0)}
 
           <mesh position={[0, 0, -l / 2 + t]} rotation={[0, Math.PI, 0]} castShadow receiveShadow><Geometry><Base><extrudeGeometry args={[createGarageBackShape(), wallExtrude]} /></Base>{getSubtractions('back')}</Geometry>{wallMaterialComponent}</mesh>
+          {renderWallRelief('back', [0, 0, -l / 2 + t], Math.PI)}
           {renderElements('back', [0, 0, -l / 2 + t], Math.PI)}
 
           <mesh position={[-w / 2, 0, l / 2 - t]} rotation={[0, Math.PI / 2, 0]} castShadow receiveShadow><Geometry><Base><extrudeGeometry args={[createGarageSideShape(false), wallExtrude]} /></Base>{getSubtractions('left', true, true)}</Geometry>{wallMaterialComponent}</mesh>
+          {renderWallRelief('left', [-w / 2, 0, l / 2 - t], Math.PI / 2, true, true)}
           {renderElements('left', [-w / 2, 0, l / 2 - t], Math.PI / 2, true, true)}
 
           <mesh position={[w / 2 - t, 0, l / 2 - t]} rotation={[0, Math.PI / 2, 0]} castShadow receiveShadow><Geometry><Base><extrudeGeometry args={[createGarageSideShape(true), wallExtrude]} /></Base>{getSubtractions('right', true, false)}</Geometry>{wallMaterialComponent}</mesh>
+          {renderWallRelief('right', [w / 2 - t, 0, l / 2 - t], Math.PI / 2, true, false)}
           {renderElements('right', [w / 2 - t, 0, l / 2 - t], Math.PI / 2, true, false)}
 
           {renderRoof()}
