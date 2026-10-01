@@ -5,8 +5,10 @@ import { Home, Maximize, PaintBucket, Plus, Trash2, BoxSelect, Layers, ChevronDo
 import { findValidPosition } from '@/lib/collision';
 import { v4 as uuidv4 } from 'uuid';
 import React, { useMemo, useState, Dispatch, SetStateAction } from 'react';
-import OfferDialog from '@/components/OfferDialog';
+import dynamic from 'next/dynamic';
 import { getTrustedParentOrigin, postCheckoutToWordPress, WORDPRESS_MESSAGE_VERSION } from '@/lib/wordpressBridge';
+
+const OfferDialog = dynamic(() => import('@/components/OfferDialog'), { ssr: false });
 
 interface ConfigPanelProps {
   config: GarageConfig;
@@ -989,4 +991,3 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     </div>
   );
 }
-

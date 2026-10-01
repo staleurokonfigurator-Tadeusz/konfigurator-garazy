@@ -3,7 +3,8 @@
 import { useMemo, useState, useEffect } from 'react';
 import { GarageConfig, GarageElement, WallFace } from '@/types';
 import * as THREE from 'three';
-import { Environment, ContactShadows, useTexture } from '@react-three/drei';
+import { ContactShadows, useTexture } from '@react-three/drei';
+import LightweightEnvironment from './LightweightEnvironment';
 import { Geometry, Base, Subtraction } from '@react-three/csg';
 
 interface TrashModelProps {
@@ -324,7 +325,7 @@ export default function TrashModel({ config, colors = [] }: TrashModelProps) {
 
   return (
     <>
-      <Environment preset="city" />
+      <LightweightEnvironment />
       <mesh scale={100}>
         <sphereGeometry args={[1, 32, 32]} />
         <meshBasicMaterial color="#d1d5db" side={THREE.BackSide} />
@@ -336,7 +337,7 @@ export default function TrashModel({ config, colors = [] }: TrashModelProps) {
       </mesh>
       <gridHelper args={[150, 150, '#3a3a3a', '#555555']} position={[0, -0.02, 0]} />
 
-      <ContactShadows resolution={1024} scale={25} blur={2.5} opacity={0.7} far={10} color="#000000" position={[0, 0, 0]} />
+      <ContactShadows resolution={256} frames={1} scale={25} blur={2.5} opacity={0.7} far={10} color="#000000" position={[0, 0, 0]} />
       
       <group>
         {renderAzurowaWall('front', frontShape, [0, 0, l / 2 - t], 0, false, false, w)}

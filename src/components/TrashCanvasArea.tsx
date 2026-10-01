@@ -1,11 +1,12 @@
 "use client";
 
 import { Canvas, useThree } from '@react-three/fiber';
-import { CameraControls, ContactShadows, Html, Line, Edges } from '@react-three/drei';
+import { CameraControls, Html, Line, Edges } from '@react-three/drei';
 import { GarageConfig, WallFace } from '@/types';
 import TrashModel from './TrashModel';
-import { Suspense, useEffect, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import { getThreePerformanceProfile } from '@/lib/threePerformance';
 
 interface CanvasAreaProps {
   config: GarageConfig;
@@ -129,11 +130,12 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
 }
 
 export default function TrashCanvasArea({ config, selectedWall, activeDimId, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
+  const renderProfile = useMemo(getThreePerformanceProfile, []);
   return (
-    <Canvas dpr={[1, 1.5]} performance={{ min: 0.5 }} gl={{ preserveDrawingBuffer: true, powerPreference: 'high-performance', antialias: true }} onCreated={({ gl }) => { gl.outputColorSpace = THREE.SRGBColorSpace; gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1; }} shadows={{ type: THREE.PCFSoftShadowMap as any }} camera={{ position: [5, 3, 7], fov: 50 }} className="w-full h-full">
+    <Canvas frameloop="demand" dpr={renderProfile.dpr} performance={{ min: renderProfile.lowPower ? 0.35 : 0.5 }} gl={{ preserveDrawingBuffer: true, powerPreference: renderProfile.lowPower ? 'default' : 'high-performance', antialias: renderProfile.antialias }} onCreated={({ gl }) => { gl.outputColorSpace = THREE.SRGBColorSpace; gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1; }} shadows={{ type: THREE.PCFShadowMap }} camera={{ position: [5, 3, 7], fov: 50 }} className="w-full h-full">
       <ambientLight intensity={0.28} />
       <hemisphereLight args={['#dbeafe', '#544b3e', 0.55]} />
-      <directionalLight position={[9, 13, 8]} intensity={1.75} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} shadow-bias={-0.0005} shadow-camera-left={-15} shadow-camera-right={15} shadow-camera-top={15} shadow-camera-bottom={-15} />
+      <directionalLight position={[9, 13, 8]} intensity={1.75} castShadow shadow-mapSize-width={renderProfile.shadowMapSize} shadow-mapSize-height={renderProfile.shadowMapSize} shadow-bias={-0.0005} shadow-camera-left={-15} shadow-camera-right={15} shadow-camera-top={15} shadow-camera-bottom={-15} />
       <directionalLight position={[-8, 7, -5]} intensity={0.32} color="#c7d2fe" />
 
       <Suspense fallback={null}>

@@ -3,7 +3,8 @@
 import { useMemo, useState, useEffect } from 'react';
 import { GarageConfig } from '@/types';
 import * as THREE from 'three';
-import { Environment, ContactShadows, useTexture } from '@react-three/drei';
+import { ContactShadows, useTexture } from '@react-three/drei';
+import LightweightEnvironment from './LightweightEnvironment';
 
 interface CarportModelProps {
   config: GarageConfig;
@@ -231,7 +232,7 @@ export default function CarportModel({ config, colors = [] }: CarportModelProps)
 
   return (
     <>
-      <Environment preset="city" />
+      <LightweightEnvironment />
       <mesh scale={100}>
         <sphereGeometry args={[1, 32, 32]} />
         <meshBasicMaterial color="#d1d5db" side={THREE.BackSide} />
@@ -243,7 +244,7 @@ export default function CarportModel({ config, colors = [] }: CarportModelProps)
       </mesh>
       <gridHelper args={[150, 150, '#3a3a3a', '#555555']} position={[0, -0.02, 0]} />
 
-      <ContactShadows resolution={1024} scale={25} blur={2.5} opacity={0.7} far={10} color="#000000" position={[0, 0, 0]} />
+      <ContactShadows resolution={256} frames={1} scale={25} blur={2.5} opacity={0.7} far={10} color="#000000" position={[0, 0, 0]} />
       
       <group>
         {/* Generowanie słupów po lewej i prawej stronie */}

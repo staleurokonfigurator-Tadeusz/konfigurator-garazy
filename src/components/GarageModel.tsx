@@ -5,8 +5,9 @@ import { GarageConfig, WallFace, SheetProfile } from '@/types';
 import * as THREE from 'three';
 import { Geometry, Base, Subtraction } from '@react-three/csg';
 import { useFrame } from '@react-three/fiber';
-import { Environment, useTexture } from '@react-three/drei';
+import { useTexture } from '@react-three/drei';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import LightweightEnvironment from './LightweightEnvironment';
 
 interface GarageModelProps {
   config: GarageConfig;
@@ -19,7 +20,9 @@ const DARK_WALNUT_TEXTURE = '/textures/ciemny-orzech.webp';
 const LOCAL_WOOD_TEXTURES = new Set([GOLDEN_OAK_TEXTURE, DARK_WALNUT_TEXTURE]);
 
 function createProfileBumpTexture(profile: SheetProfile) {
-  const size = 256;
+  // Prawdziwa geometria odpowiada teraz za kształt profilu. Mapa 128 px
+  // wystarcza do delikatnego cieniowania i zużywa cztery razy mniej pamięci.
+  const size = 128;
   const data = new Uint8Array(size * size * 4);
   const ribs = profile.includes('t7') ? 18 : profile.includes('t14') ? 12 : 9;
   const horizontal = profile.startsWith('poziome');
@@ -331,10 +334,11 @@ function SectionalGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHo
   const progress = useRef(el.isOpen ? 1 : 0);
   const elW = (el.width || 0) * 0.01; const elH = (el.height || 0) * 0.01; const thick = 0.05; const panelH = elH / PANEL_COUNT;
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (!groupRef.current) return;
     const target = el.isOpen ? 1 : 0;
     progress.current += (target - progress.current) * Math.min(1, delta * 3.0);
+    if (Math.abs(target - progress.current) > 0.001) state.invalidate();
     const p = progress.current;
     const panels = groupRef.current.children;
     for (let i = 0; i < PANEL_COUNT; i++) {
@@ -387,10 +391,11 @@ function AnimatedGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHor
   const elW = (el.width || 0) * 0.01; const elH = (el.height || 0) * 0.01; const thick = 0.05;
   const animState = useRef({ progress: el.isOpen ? 1 : 0 });
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (!ref.current) return;
     const target = el.isOpen ? 1 : 0;
     animState.current.progress += (target - animState.current.progress) * Math.min(1, delta * 2.5);
+    if (Math.abs(target - animState.current.progress) > 0.001) state.invalidate();
     const phase = animState.current.progress;
     if (el.gateType === 'up-and-over') { const pivot = ref.current.children[0]; if (pivot) pivot.rotation.x = -phase * (Math.PI / 2); } 
     else if (el.gateType === 'swing') { const leftDoor  = ref.current.children[0]; const rightDoor = ref.current.children[1]; if (leftDoor) leftDoor.rotation.y = -phase * (Math.PI / 2); if (rightDoor) rightDoor.rotation.y = phase * (Math.PI / 2); }
@@ -955,7 +960,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
 
   return (
     <>
-      <Environment preset="warehouse" environmentIntensity={0.7} />
+      <LightweightEnvironment intensity={0.72} />
       <color attach="background" args={['#dbe4ea']} />
       
       <group name="garageModelGroup">
@@ -993,4 +998,3 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     </>
   );
 }
-
