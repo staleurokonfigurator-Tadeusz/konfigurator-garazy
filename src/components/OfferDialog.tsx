@@ -57,11 +57,21 @@ export default function OfferDialog({ config, estimatedPrice, colors, selectedWa
     }
     setGenerating(true);
     try {
+      // Starsze lub rozpoczęte wcześniej konfiguracje mogły mieć włączoną wiatę,
+      // ale bez zapisanej szerokości, mimo że model 3D pokazywał domyślne 300 cm.
+      // Ujednolicamy migawkę przed zapisem w WordPressie i przed rysowaniem PDF.
+      const offerConfig: GarageConfig = config.hasCarport
+        ? {
+            ...config,
+            carportWidth: config.carportWidth || 300,
+            carportSide: config.carportSide || 'right',
+          }
+        : config;
       const views = await captureViews();
       if (!requestARExport) throw new Error('Eksporter modelu AR jest niedostępny.');
       const arModel = await requestARExport();
       const colorLabels = Object.fromEntries(colors.map(color => [color.id, color.label || color.id]));
-      const wordpressOffer = await createOfferInWordPress({ config, customer, estimatedPrice, storeUrl, arModel });
+      const wordpressOffer = await createOfferInWordPress({ config: offerConfig, customer, estimatedPrice, storeUrl, arModel });
       const finalCustomer = {
         ...customer,
         // QR zawsze wskazuje model GLB zapisany dla tej konkretnej oferty.
@@ -70,7 +80,7 @@ export default function OfferDialog({ config, estimatedPrice, colors, selectedWa
       await generateOfferPdf({
         offerNumber: wordpressOffer.offerNumber,
         customer: finalCustomer,
-        config,
+        config: offerConfig,
         estimatedPrice: wordpressOffer.verifiedPrice,
         colorLabels,
         views,
@@ -141,4 +151,5 @@ export default function OfferDialog({ config, estimatedPrice, colors, selectedWa
     </div>
   );
 }
+
 
