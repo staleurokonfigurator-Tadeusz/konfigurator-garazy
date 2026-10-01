@@ -78,7 +78,7 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
 }
 
 export default function PergolaCanvasArea({ config, selectedWall, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
-  const renderProfile = useMemo(getThreePerformanceProfile, []);
+  const renderProfile = useMemo(() => getThreePerformanceProfile(), []);
   return (
     <Canvas frameloop="demand" dpr={renderProfile.dpr} performance={{ min: renderProfile.lowPower ? 0.35 : 0.5 }} gl={{ preserveDrawingBuffer: true, powerPreference: renderProfile.lowPower ? 'default' : 'high-performance', antialias: renderProfile.antialias }} onCreated={({ gl }) => { gl.outputColorSpace = THREE.SRGBColorSpace; gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1; }} shadows={{ type: THREE.PCFShadowMap }} camera={{ position: [5, 3, 7], fov: 50 }} className="w-full h-full">
       <ambientLight intensity={0.28} />

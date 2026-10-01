@@ -581,14 +581,16 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
   }, [profileTextures]);
 
   const rt = String(config.roofType || '').toLowerCase();
-  const isDual = rt.includes('dual') || rt.includes('dwuspad');
+  const isDualFrontBack = rt === 'dual-slope-front-back' || rt.includes('dwuspad-przod-tyl');
+  const isDualLeftRight = (rt.includes('dual') || rt.includes('dwuspad')) && !isDualFrontBack;
   const isFront = rt.includes('front') || rt.includes('przód');
   const isBack = rt.includes('back') || rt.includes('tył');
   const isLeft = rt.includes('left') || rt.includes('lewo');
   const isRight = rt.includes('right') || rt.includes('prawo');
 
   const getH = (x: number, z: number) => {
-    if (isDual) return h + slopeH * (1 - Math.abs(x - centerX) / (totalW / 2));
+    if (isDualLeftRight) return h + slopeH * (1 - Math.abs(x - centerX) / (totalW / 2));
+    if (isDualFrontBack) return h + slopeH * (1 - Math.abs(z) / (l / 2));
     if (isFront) return h + slopeH * (0.5 - z/l);
     if (isBack) return h + slopeH * (0.5 + z/l);
     if (isLeft) return h + slopeH * ((x - minX) / totalW); 
@@ -599,7 +601,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
   const createGarageFrontShape = () => {
     const s = new THREE.Shape();
     s.moveTo(-w/2, 0); s.lineTo(w/2, 0); s.lineTo(w/2, getH(w/2, l/2));
-    if (isDual && centerX > -w/2 && centerX < w/2) s.lineTo(centerX, getH(centerX, l/2));
+    if (isDualLeftRight && centerX > -w/2 && centerX < w/2) s.lineTo(centerX, getH(centerX, l/2));
     s.lineTo(-w/2, getH(-w/2, l/2));
     s.closePath(); return s;
   };
@@ -607,7 +609,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
   const createGarageBackShape = () => {
     const s = new THREE.Shape();
     s.moveTo(-w/2, 0); s.lineTo(w/2, 0); s.lineTo(w/2, getH(-w/2, -l/2)); 
-    if (isDual && centerX > -w/2 && centerX < w/2) s.lineTo(-centerX, getH(centerX, -l/2));
+    if (isDualLeftRight && centerX > -w/2 && centerX < w/2) s.lineTo(-centerX, getH(centerX, -l/2));
     s.lineTo(-w/2, getH(w/2, -l/2)); 
     s.closePath(); return s;
   };
@@ -617,6 +619,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     const wallX = isRightSide ? w/2 : -w/2;
     s.moveTo(0, 0); s.lineTo(l, 0);
     s.lineTo(l, getH(wallX, -l/2));
+    if (isDualFrontBack) s.lineTo(l / 2, getH(wallX, 0));
     s.lineTo(0, getH(wallX, l/2));
     s.closePath(); return s;
   };
@@ -758,7 +761,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       </group>
     );
 
-    if (isDual) {
+    if (isDualLeftRight) {
       const roofTheta = Math.atan2(slopeH, totalW/2);
       const overlap = 0.08; 
       const paneLen = (totalW/2 + oX) / Math.cos(roofTheta) + overlap;
@@ -786,6 +789,40 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
             <>
               {renderGutterPipe(rL, [Math.PI/2, 0, 0], [-totalW/2 - oX, eavesY - ridgeY - 0.01, 0], [-totalW/2 - oX + 0.035, -ridgeY, -l/2 - oZ + 0.05], eavesY)}
               {renderGutterPipe(rL, [Math.PI/2, 0, 0], [ totalW/2 + oX, eavesY - ridgeY - 0.01, 0], [ totalW/2 + oX - 0.035, -ridgeY, -l/2 - oZ + 0.05], eavesY)}
+            </>
+          )}
+        </group>
+      );
+    }
+
+    if (isDualFrontBack) {
+      const roofTheta = Math.atan2(slopeH, l / 2);
+      const overlap = 0.08;
+      const paneLen = (l / 2 + oZ) / Math.cos(roofTheta) + overlap;
+      const liftY = (t / 2) / Math.cos(roofTheta);
+      const ridgeY = h + slopeH + liftY;
+      const eavesY = h + liftY - Math.tan(roofTheta) * oZ;
+
+      return (
+        <group position={[centerX, ridgeY, 0]}>
+          <group rotation={[roofTheta, 0, 0]}>
+            <mesh position={[0, 0, paneLen / 2 - overlap / 2]} castShadow receiveShadow>
+              <boxGeometry args={[rW, t, paneLen]} />
+              {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{renderFasciaMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
+            </mesh>
+            {isRoofTile && <RoofTileRelief width={rW} depth={paneLen} slopeAxis="z" position={[0, t / 2 + 0.002, paneLen / 2 - overlap / 2]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofReliefTexture} normalTexture={isRoofWood ? woodNormal : undefined} />}
+          </group>
+          <group rotation={[-roofTheta, 0, 0]}>
+            <mesh position={[0, 0, -(paneLen / 2 - overlap / 2)]} castShadow receiveShadow>
+              <boxGeometry args={[rW, t, paneLen]} />
+              {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{renderFasciaMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
+            </mesh>
+            {isRoofTile && <RoofTileRelief width={rW} depth={paneLen} slopeAxis="z" position={[0, t / 2 + 0.002, -(paneLen / 2 - overlap / 2)]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofReliefTexture} normalTexture={isRoofWood ? woodNormal : undefined} />}
+          </group>
+          {showGutters && (
+            <>
+              {renderGutterPipe(rW, [0, 0, Math.PI / 2], [0, eavesY - ridgeY - 0.01, l / 2 + oZ], [totalW / 2 + oX - 0.05, -ridgeY, l / 2 + oZ - 0.035], eavesY)}
+              {renderGutterPipe(rW, [0, 0, Math.PI / 2], [0, eavesY - ridgeY - 0.01, -l / 2 - oZ], [totalW / 2 + oX - 0.05, -ridgeY, -l / 2 - oZ + 0.035], eavesY)}
             </>
           )}
         </group>
@@ -927,19 +964,19 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     }
 
     const sF = new THREE.Shape();
-    if (cSide === 'right') { sF.moveTo(w/2, h); sF.lineTo(maxX, h); sF.lineTo(maxX, getH(maxX, l/2)); if (isDual && centerX > w/2 && centerX < maxX) sF.lineTo(centerX, getH(centerX, l/2)); sF.lineTo(w/2, getH(w/2, l/2)); } 
-    else { sF.moveTo(minX, h); sF.lineTo(-w/2, h); sF.lineTo(-w/2, getH(-w/2, l/2)); if (isDual && centerX > minX && centerX < -w/2) sF.lineTo(centerX, getH(centerX, l/2)); sF.lineTo(minX, getH(minX, l/2)); }
+    if (cSide === 'right') { sF.moveTo(w/2, h); sF.lineTo(maxX, h); sF.lineTo(maxX, getH(maxX, l/2)); if (isDualLeftRight && centerX > w/2 && centerX < maxX) sF.lineTo(centerX, getH(centerX, l/2)); sF.lineTo(w/2, getH(w/2, l/2)); }
+    else { sF.moveTo(minX, h); sF.lineTo(-w/2, h); sF.lineTo(-w/2, getH(-w/2, l/2)); if (isDualLeftRight && centerX > minX && centerX < -w/2) sF.lineTo(centerX, getH(centerX, l/2)); sF.lineTo(minX, getH(minX, l/2)); }
     sF.closePath();
 
     const sB = new THREE.Shape();
-    if (cSide === 'right') { sB.moveTo(w/2, h); sB.lineTo(maxX, h); sB.lineTo(maxX, getH(maxX, -l/2)); if (isDual && centerX > w/2 && centerX < maxX) sB.lineTo(centerX, getH(centerX, -l/2)); sB.lineTo(w/2, getH(w/2, -l/2)); } 
-    else { sB.moveTo(minX, h); sB.lineTo(-w/2, h); sB.lineTo(-w/2, getH(-w/2, -l/2)); if (isDual && centerX > minX && centerX < -w/2) sB.lineTo(centerX, getH(centerX, -l/2)); sB.lineTo(minX, getH(minX, -l/2)); }
+    if (cSide === 'right') { sB.moveTo(w/2, h); sB.lineTo(maxX, h); sB.lineTo(maxX, getH(maxX, -l/2)); if (isDualLeftRight && centerX > w/2 && centerX < maxX) sB.lineTo(centerX, getH(centerX, -l/2)); sB.lineTo(w/2, getH(w/2, -l/2)); }
+    else { sB.moveTo(minX, h); sB.lineTo(-w/2, h); sB.lineTo(-w/2, getH(-w/2, -l/2)); if (isDualLeftRight && centerX > minX && centerX < -w/2) sB.lineTo(centerX, getH(centerX, -l/2)); sB.lineTo(minX, getH(minX, -l/2)); }
     sB.closePath();
 
     const sS = new THREE.Shape();
     sS.moveTo(0, h); sS.lineTo(l, h);
-    if (cSide === 'right') { sS.lineTo(l, getH(maxX, -l/2)); sS.lineTo(0, getH(maxX, l/2)); } 
-    else { sS.lineTo(l, getH(minX, -l/2)); sS.lineTo(0, getH(minX, l/2)); }
+    if (cSide === 'right') { sS.lineTo(l, getH(maxX, -l/2)); if (isDualFrontBack) sS.lineTo(l / 2, getH(maxX, 0)); sS.lineTo(0, getH(maxX, l/2)); }
+    else { sS.lineTo(l, getH(minX, -l/2)); if (isDualFrontBack) sS.lineTo(l / 2, getH(minX, 0)); sS.lineTo(0, getH(minX, l/2)); }
     sS.closePath();
 
     return (

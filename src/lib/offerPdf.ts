@@ -37,7 +37,8 @@ const gateNames: Record<string, string> = {
 };
 
 const roofNames: Record<string, string> = {
-  'dual-slope': 'dwuspadowy',
+  'dual-slope': 'dwuspadowy prawo-lewo',
+  'dual-slope-front-back': 'dwuspadowy przod-tyl',
   'slope-front': 'spad w przod',
   'slope-back': 'spad w tyl',
   'slope-left': 'spad w lewo',
@@ -105,6 +106,17 @@ function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: 
     doc.setFontSize(7);
     doc.setTextColor(71, 85, 105);
     doc.text('WIATA', carportX + carportWidth / 2, y + length / 2, { align: 'center', angle: 90 });
+  }
+  if (config.roofType === 'dual-slope' || config.roofType === 'dual-slope-front-back') {
+    doc.setDrawColor(100, 116, 139);
+    doc.setLineWidth(0.35);
+    doc.setLineDashPattern([2, 1.5], 0);
+    if (config.roofType === 'dual-slope') {
+      doc.line(x + width / 2, y, x + width / 2, y + length);
+    } else {
+      doc.line(x, y + length / 2, x + width, y + length / 2);
+    }
+    doc.setLineDashPattern([], 0);
   }
   doc.setTextColor(30, 30, 30);
   doc.setDrawColor(35, 35, 35);
@@ -186,14 +198,18 @@ function drawElevationPlan(
   const garageX = carportWidth > 0 && config.carportSide === 'left' ? x + carportWidth : x;
   const carportX = config.carportSide === 'left' ? x : garageX + garageWidth;
   const wallHeight = config.height * scale;
-  const roofRise = config.roofType === 'dual-slope' ? Math.min(16, width * 0.16) : Math.min(10, width * 0.1);
+  const isDualLeftRight = config.roofType === 'dual-slope';
+  const isDualFrontBack = config.roofType === 'dual-slope-front-back';
+  const isDual = isDualLeftRight || isDualFrontBack;
+  const roofRise = isDual ? Math.min(16, width * 0.16) : Math.min(10, width * 0.1);
   const slopesAcrossThisWall = ((wall === 'front' || wall === 'back') && (config.roofType === 'slope-left' || config.roofType === 'slope-right'))
     || ((wall === 'left' || wall === 'right') && (config.roofType === 'slope-front' || config.roofType === 'slope-back'));
   const highOnLeft = (config.roofType === 'slope-right' && wall === 'front')
     || (config.roofType === 'slope-left' && wall === 'back')
     || (config.roofType === 'slope-front' && wall === 'left')
     || (config.roofType === 'slope-back' && wall === 'right');
-  const visibleRoofRise = (config.roofType === 'dual-slope' && isFrontBack) || slopesAcrossThisWall ? roofRise : 1.5;
+  const showsDualGable = (isDualLeftRight && isFrontBack) || (isDualFrontBack && !isFrontBack);
+  const visibleRoofRise = showsDualGable || slopesAcrossThisWall ? roofRise : 1.5;
   const roofBaseYAt = (pointX: number) => {
     if (!slopesAcrossThisWall || width <= 0) return y;
     const leftY = highOnLeft ? y - roofRise : y;
@@ -259,7 +275,7 @@ function drawElevationPlan(
   const roofLeft = x - overhang;
   const roofRight = x + width + overhang;
   const roofWidth = roofRight - roofLeft;
-  if (config.roofType === 'dual-slope' && (wall === 'front' || wall === 'back')) {
+  if (showsDualGable) {
     const ridgeX = x + width / 2;
     doc.lines([
       [ridgeX - roofLeft, -roofRise],
@@ -269,7 +285,7 @@ function drawElevationPlan(
       [roofLeft - ridgeX, roofRise],
       [0, roofThickness],
     ], roofLeft, y, [1, 1], 'FD', true);
-  } else if (config.roofType === 'dual-slope') {
+  } else if (isDual) {
     doc.rect(roofLeft, y - roofThickness, roofWidth, roofThickness, 'FD');
   } else {
     if (slopesAcrossThisWall) {
@@ -546,5 +562,4 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   const safeNumber = safeText(input.offerNumber, 60).replace(/[^a-zA-Z0-9_-]+/g, '-');
   doc.save(`oferta-${safeNumber || Date.now()}.pdf`);
 }
-
 

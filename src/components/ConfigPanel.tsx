@@ -47,13 +47,64 @@ function Section({ title, icon, children, defaultOpen = true }: { title: string;
 }
 
 const RoofIcon = ({ type }: { type: RoofType }) => {
+  const isDualLeftRight = type === 'dual-slope';
+  const isDualFrontBack = type === 'dual-slope-front-back';
+
   return (
-    <svg viewBox="0 0 100 100" className="w-12 h-12 mb-2 text-[var(--theme)] opacity-90 group-hover:scale-110 transition-transform">
-      {type === 'dual-slope' && <path d="M50 20 L90 50 L90 80 L10 80 L10 50 Z" fill="currentColor" opacity="0.15" stroke="currentColor" strokeWidth="6" strokeLinejoin="round"/>}
-      {type === 'slope-back' && <path d="M10 30 L90 50 L90 80 L10 80 Z" fill="currentColor" opacity="0.15" stroke="currentColor" strokeWidth="6" strokeLinejoin="round"/>}
-      {type === 'slope-front' && <path d="M10 50 L90 30 L90 80 L10 80 Z" fill="currentColor" opacity="0.15" stroke="currentColor" strokeWidth="6" strokeLinejoin="round"/>}
-      {type === 'slope-left' && <path d="M10 50 L90 20 L90 80 L10 80 Z" fill="currentColor" opacity="0.15" stroke="currentColor" strokeWidth="6" strokeLinejoin="round"/>}
-      {type === 'slope-right' && <path d="M10 20 L90 50 L90 80 L10 80 Z" fill="currentColor" opacity="0.15" stroke="currentColor" strokeWidth="6" strokeLinejoin="round"/>}
+    <svg
+      viewBox="0 0 96 72"
+      role="img"
+      aria-hidden="true"
+      className="mb-2 h-14 w-16 overflow-visible text-[var(--theme)] transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:scale-105"
+    >
+      <g stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        {isDualLeftRight && (
+          <>
+            <path d="M12 43 42 19 84 34 54 59Z" fill="currentColor" opacity="0.1" />
+            <path d="M12 43 42 19 54 59Z" fill="currentColor" opacity="0.24" />
+            <path d="M42 19 84 34 54 59" fill="none" />
+            <path d="M12 43 42 19 54 59 84 34" fill="none" />
+            <path d="M42 19 42 56" strokeDasharray="3.5 4" opacity="0.55" />
+          </>
+        )}
+        {isDualFrontBack && (
+          <>
+            <path d="M11 39 53 24 85 39 43 56Z" fill="currentColor" opacity="0.1" />
+            <path d="M20 31 62 17 85 39 43 56Z" fill="currentColor" opacity="0.22" />
+            <path d="M20 31 62 17 85 39M11 39 53 24 43 56 85 39" fill="none" />
+            <path d="M20 31 62 17" strokeWidth="3.2" />
+          </>
+        )}
+        {type === 'slope-back' && (
+          <>
+            <path d="M12 31 63 20 84 35 33 49Z" fill="currentColor" opacity="0.2" />
+            <path d="M12 31 63 20 84 35 33 49Z" fill="none" />
+            <path d="M12 31 63 20" strokeWidth="3.2" />
+          </>
+        )}
+        {type === 'slope-front' && (
+          <>
+            <path d="M12 42 63 28 84 18 33 33Z" fill="currentColor" opacity="0.2" />
+            <path d="M12 42 63 28 84 18 33 33Z" fill="none" />
+            <path d="M33 33 84 18" strokeWidth="3.2" />
+          </>
+        )}
+        {type === 'slope-left' && (
+          <>
+            <path d="M13 42 40 23 84 35 56 55Z" fill="currentColor" opacity="0.2" />
+            <path d="M13 42 40 23 84 35 56 55Z" fill="none" />
+            <path d="M40 23 84 35" strokeWidth="3.2" />
+          </>
+        )}
+        {type === 'slope-right' && (
+          <>
+            <path d="M13 31 57 20 84 40 40 51Z" fill="currentColor" opacity="0.2" />
+            <path d="M13 31 57 20 84 40 40 51Z" fill="none" />
+            <path d="M13 31 57 20" strokeWidth="3.2" />
+          </>
+        )}
+        <path d="M17 55v7h62v-18" fill="none" opacity="0.35" />
+      </g>
     </svg>
   );
 };
@@ -98,7 +149,8 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     let totalFinal = 0;
     let percentFinalMultiplier = 1;
 
-    let baseM2Price = config.roofType === 'dual-slope' ? safeNum(pricing.sqm_dual_v) : safeNum(pricing.sqm_single_v);
+    const isDualSlopeRoof = config.roofType === 'dual-slope' || config.roofType === 'dual-slope-front-back';
+    let baseM2Price = isDualSlopeRoof ? safeNum(pricing.sqm_dual_v) : safeNum(pricing.sqm_single_v);
     
     const baseH = safeNum(appData?.baseConfig?.h) || 210;
     const extraHeight = Math.max(0, config.height - baseH);
@@ -116,7 +168,8 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
     if (config.gutters) {
       let gutterMeters = 0;
-      if (config.roofType === 'dual-slope') gutterMeters = (config.length / 100) * 2; 
+      if (config.roofType === 'dual-slope') gutterMeters = (config.length / 100) * 2;
+      else if (config.roofType === 'dual-slope-front-back') gutterMeters = (config.width / 100) * 2;
       else if (config.roofType === 'slope-back' || config.roofType === 'slope-front') gutterMeters = (config.width / 100); 
       else gutterMeters = (config.length / 100);
       totalBase += gutterMeters * safeNum(pricing.gutter_v);
@@ -371,10 +424,11 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
   return (
     <div className="pb-12">
       <Section title="Wybierz Typ Garażu" icon={<Home size={20} />}>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-3">
           {([
             { id: 'slope-back',  label: 'Spad w tył' },
-            { id: 'dual-slope',  label: 'Dwuspadowy' },
+            { id: 'dual-slope',  label: 'Dwuspadowy prawo–lewo' },
+            { id: 'dual-slope-front-back', label: 'Dwuspadowy przód–tył' },
             { id: 'slope-left',  label: 'Spad w lewo' },
             { id: 'slope-right', label: 'Spad w prawo' },
             { id: 'slope-front', label: 'Spad w przód' },
@@ -385,7 +439,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                 key={rt.id}
                 disabled={isReadOnly}
                 onClick={() => updateConfig('roofType', rt.id)}
-                className={`flex-1 min-w-[100px] rounded-xl border-2 p-3 flex flex-col items-center justify-center gap-1 transition-all group ${
+                className={`group flex min-h-[132px] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl border-2 p-3 transition-all ${
                   active
                     ? 'border-[var(--theme)] bg-zinc-50 shadow-sm text-[var(--theme)]'
                     : 'border-zinc-200 bg-white hover:border-zinc-300 text-zinc-600'
@@ -787,7 +841,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
               <span className="text-sm font-semibold text-zinc-700">Rynny i rury spustowe</span>
             </div>
             <span className="text-xs font-bold text-[var(--theme)] bg-[var(--theme)]/10 px-2 py-1 rounded">
-              +{Math.round((config.roofType === 'dual-slope' ? (config.length / 100) * 2 : (config.roofType === 'slope-back' || config.roofType === 'slope-front' ? (config.width / 100) : (config.length / 100))) * safeNum(pricing.gutter_v))} zł
+              +{Math.round((config.roofType === 'dual-slope' ? (config.length / 100) * 2 : config.roofType === 'dual-slope-front-back' ? (config.width / 100) * 2 : (config.roofType === 'slope-back' || config.roofType === 'slope-front' ? (config.width / 100) : (config.length / 100))) * safeNum(pricing.gutter_v))} zł
             </span>
           </label>
 

@@ -1,4 +1,4 @@
-export type RoofType = 'dual-slope' | 'slope-front' | 'slope-back' | 'slope-left' | 'slope-right';
+export type RoofType = 'dual-slope' | 'dual-slope-front-back' | 'slope-front' | 'slope-back' | 'slope-left' | 'slope-right';
 export type WallFace = 'front' | 'back' | 'left' | 'right';
 export type GateType = 'up-and-over' | 'swing' | 'sectional';
 

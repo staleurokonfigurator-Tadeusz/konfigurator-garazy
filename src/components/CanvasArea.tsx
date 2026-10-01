@@ -111,6 +111,7 @@ function DimensionsOverlay({ config, activeId }: { config: GarageConfig, activeI
 
 function SceneGround({ config }: { config: GarageConfig }) {
   const grassSource = useTexture('/textures/trawa.webp');
+  const drivewaySource = useTexture('/textures/podjazd-kostka.webp');
   const grass = useMemo(() => {
     const texture = grassSource.clone();
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
@@ -121,10 +122,38 @@ function SceneGround({ config }: { config: GarageConfig }) {
     return texture;
   }, [grassSource]);
 
-  useEffect(() => () => grass.dispose(), [grass]);
+  const driveway = useMemo(() => {
+    const texture = drivewaySource.clone();
+    texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    texture.needsUpdate = true;
+    return texture;
+  }, [drivewaySource]);
+
+  const drivewayBump = useMemo(() => {
+    const texture = drivewaySource.clone();
+    texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
+    texture.colorSpace = THREE.NoColorSpace;
+    texture.anisotropy = 2;
+    texture.needsUpdate = true;
+    return texture;
+  }, [drivewaySource]);
 
   const drivewayWidth = Math.max(3.2, Math.min(6, config.width / 100));
   const garageFront = config.length / 200;
+
+  useEffect(() => {
+    const tileSize = 1.35;
+    driveway.repeat.set(drivewayWidth / tileSize, 8 / tileSize);
+    drivewayBump.repeat.copy(driveway.repeat);
+  }, [driveway, drivewayBump, drivewayWidth]);
+
+  useEffect(() => () => {
+    grass.dispose();
+    driveway.dispose();
+    drivewayBump.dispose();
+  }, [grass, driveway, drivewayBump]);
 
   return (
     <group>
@@ -134,7 +163,7 @@ function SceneGround({ config }: { config: GarageConfig }) {
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.018, garageFront + 4]}>
         <planeGeometry args={[drivewayWidth, 8]} />
-        <meshStandardMaterial color="#a7a29a" roughness={0.92} metalness={0.02} />
+        <meshStandardMaterial map={driveway} bumpMap={drivewayBump} bumpScale={0.028} color="#d8d5cf" roughness={0.94} metalness={0} />
       </mesh>
     </group>
   );
@@ -184,7 +213,7 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
 }
 
 export default function CanvasArea({ config, selectedWall, activeDimId, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
-  const renderProfile = useMemo(getThreePerformanceProfile, []);
+  const renderProfile = useMemo(() => getThreePerformanceProfile(), []);
   const contactShadowKey = useMemo(() => JSON.stringify({
     width: config.width,
     length: config.length,
