@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import React, { useMemo, useState, Dispatch, SetStateAction } from 'react';
 import dynamic from 'next/dynamic';
 import { getTrustedParentOrigin, postCheckoutToWordPress, WORDPRESS_MESSAGE_VERSION } from '@/lib/wordpressBridge';
+import RoofTypeIcon from './RoofTypeIcon';
 
 const OfferDialog = dynamic(() => import('@/components/OfferDialog'), { ssr: false });
 
@@ -45,69 +46,6 @@ function Section({ title, icon, children, defaultOpen = true }: { title: string;
     </section>
   );
 }
-
-const RoofIcon = ({ type }: { type: RoofType }) => {
-  const isDualLeftRight = type === 'dual-slope';
-  const isDualFrontBack = type === 'dual-slope-front-back';
-
-  return (
-    <svg
-      viewBox="0 0 96 72"
-      role="img"
-      aria-hidden="true"
-      className="mb-2 h-14 w-16 overflow-visible text-[var(--theme)] transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:scale-105"
-    >
-      <g stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        {isDualLeftRight && (
-          <>
-            <path d="M12 43 42 19 84 34 54 59Z" fill="currentColor" opacity="0.1" />
-            <path d="M12 43 42 19 54 59Z" fill="currentColor" opacity="0.24" />
-            <path d="M42 19 84 34 54 59" fill="none" />
-            <path d="M12 43 42 19 54 59 84 34" fill="none" />
-            <path d="M42 19 42 56" strokeDasharray="3.5 4" opacity="0.55" />
-          </>
-        )}
-        {isDualFrontBack && (
-          <>
-            <path d="M11 39 53 24 85 39 43 56Z" fill="currentColor" opacity="0.1" />
-            <path d="M20 31 62 17 85 39 43 56Z" fill="currentColor" opacity="0.22" />
-            <path d="M20 31 62 17 85 39M11 39 53 24 43 56 85 39" fill="none" />
-            <path d="M20 31 62 17" strokeWidth="3.2" />
-          </>
-        )}
-        {type === 'slope-back' && (
-          <>
-            <path d="M12 31 63 20 84 35 33 49Z" fill="currentColor" opacity="0.2" />
-            <path d="M12 31 63 20 84 35 33 49Z" fill="none" />
-            <path d="M12 31 63 20" strokeWidth="3.2" />
-          </>
-        )}
-        {type === 'slope-front' && (
-          <>
-            <path d="M12 42 63 28 84 18 33 33Z" fill="currentColor" opacity="0.2" />
-            <path d="M12 42 63 28 84 18 33 33Z" fill="none" />
-            <path d="M33 33 84 18" strokeWidth="3.2" />
-          </>
-        )}
-        {type === 'slope-left' && (
-          <>
-            <path d="M13 42 40 23 84 35 56 55Z" fill="currentColor" opacity="0.2" />
-            <path d="M13 42 40 23 84 35 56 55Z" fill="none" />
-            <path d="M40 23 84 35" strokeWidth="3.2" />
-          </>
-        )}
-        {type === 'slope-right' && (
-          <>
-            <path d="M13 31 57 20 84 40 40 51Z" fill="currentColor" opacity="0.2" />
-            <path d="M13 31 57 20 84 40 40 51Z" fill="none" />
-            <path d="M13 31 57 20" strokeWidth="3.2" />
-          </>
-        )}
-        <path d="M17 55v7h62v-18" fill="none" opacity="0.35" />
-      </g>
-    </svg>
-  );
-};
 
 export default function ConfigPanel({ config, setConfig, selectedWall, setSelectedWall, appData, isGeneratingAR, setIsGeneratingAR, isReadOnly = false, isOfferMode = false, storeUrl, requestARExport, activeDimId, setActiveDimId }: ConfigPanelProps) {
   const [activeColorEdit, setActiveColorEdit] = useState<string | null>(null);
@@ -439,13 +377,14 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                 key={rt.id}
                 disabled={isReadOnly}
                 onClick={() => updateConfig('roofType', rt.id)}
-                className={`group flex min-h-[132px] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl border-2 p-3 transition-all ${
+                aria-pressed={active}
+                className={`group flex min-h-[150px] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl border-2 p-3 transition-all ${
                   active
                     ? 'border-[var(--theme)] bg-zinc-50 shadow-sm text-[var(--theme)]'
                     : 'border-zinc-200 bg-white hover:border-zinc-300 text-zinc-600'
                 } ${isReadOnly ? 'opacity-90 cursor-not-allowed' : ''}`}
               >
-                <RoofIcon type={rt.id} />
+                <RoofTypeIcon type={rt.id} />
                 <span className="text-xs font-bold text-center leading-tight">{rt.label}</span>
               </button>
             );
