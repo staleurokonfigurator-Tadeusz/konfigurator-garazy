@@ -1,6 +1,7 @@
 import type { GarageConfig, GarageElement, WallFace } from '@/types';
 
 export interface OfferCustomer {
+  brand: 'gardhouse' | 'staleuro';
   name: string;
   company: string;
   email: string;
@@ -64,13 +65,36 @@ function elementDescription(element: GarageElement) {
 }
 
 function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: number, y: number, maxWidth: number) {
-  const ratio = Math.min(maxWidth / config.width, 70 / config.length);
-  const width = config.width * ratio;
+  const carportWidthCm = config.hasCarport ? (config.carportWidth || 0) : 0;
+  const totalWidthCm = config.width + carportWidthCm;
+  const ratio = Math.min(maxWidth / totalWidthCm, 70 / config.length);
+  const width = totalWidthCm * ratio;
+  const garageWidth = config.width * ratio;
+  const carportWidth = carportWidthCm * ratio;
   const length = config.length * ratio;
+  const garageX = config.hasCarport && config.carportSide === 'left' ? x + carportWidth : x;
+  const carportX = config.carportSide === 'left' ? x : garageX + garageWidth;
 
   doc.setDrawColor(35, 35, 35);
   doc.setLineWidth(0.7);
-  doc.rect(x, y, width, length);
+  doc.rect(garageX, y, garageWidth, length);
+  if (config.hasCarport && carportWidth > 0) {
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(100, 116, 139);
+    doc.setLineDashPattern([2, 1], 0);
+    doc.rect(carportX, y, carportWidth, length, 'FD');
+    doc.setLineDashPattern([], 0);
+    doc.setFillColor(71, 85, 105);
+    [[carportX, y], [carportX + carportWidth, y], [carportX, y + length], [carportX + carportWidth, y + length]].forEach(([postX, postY]) => {
+      doc.rect(postX - 0.8, postY - 0.8, 1.6, 1.6, 'F');
+    });
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(71, 85, 105);
+    doc.text('WIATA', carportX + carportWidth / 2, y + length / 2, { align: 'center', angle: 90 });
+  }
+  doc.setTextColor(30, 30, 30);
+  doc.setDrawColor(35, 35, 35);
   doc.setLineWidth(0.2);
   doc.line(x, y - 5, x + width, y - 5);
   doc.line(x, y - 7, x, y - 3);
@@ -79,8 +103,13 @@ function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: 
   doc.line(x - 7, y, x - 3, y);
   doc.line(x - 7, y + length, x - 3, y + length);
   doc.setFontSize(9);
-  doc.text(`${config.width} cm`, x + width / 2, y - 7, { align: 'center' });
+  doc.text(`${totalWidthCm} cm`, x + width / 2, y - 7, { align: 'center' });
   doc.text(`${config.length} cm`, x - 8, y + length / 2, { angle: 90, align: 'center' });
+  if (config.hasCarport && carportWidth > 0) {
+    doc.setFontSize(6.5);
+    doc.text(`Garaz ${config.width} cm`, garageX + garageWidth / 2, y + length + 8, { align: 'center' });
+    doc.text(`Wiata ${carportWidthCm} cm`, carportX + carportWidth / 2, y + length + 8, { align: 'center' });
+  }
 
   const markOpening = (element: GarageElement) => {
     const isHorizontalWall = element.wall === 'front' || element.wall === 'back';
@@ -95,25 +124,25 @@ function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: 
     doc.setTextColor(120, 53, 15);
 
     if (element.wall === 'front') {
-      const x1 = x + start * ratio;
-      const x2 = x + end * ratio;
+      const x1 = garageX + start * ratio;
+      const x2 = garageX + end * ratio;
       doc.line(x1, y + length, x2, y + length);
       doc.text(code, (x1 + x2) / 2, y + length + 3, { align: 'center' });
     } else if (element.wall === 'back') {
-      const x1 = x + start * ratio;
-      const x2 = x + end * ratio;
+      const x1 = garageX + start * ratio;
+      const x2 = garageX + end * ratio;
       doc.line(x1, y, x2, y);
       doc.text(code, (x1 + x2) / 2, y - 2, { align: 'center' });
     } else if (element.wall === 'left') {
       const y1 = y + start * ratio;
       const y2 = y + end * ratio;
-      doc.line(x, y1, x, y2);
-      doc.text(code, x + 2, (y1 + y2) / 2);
+      doc.line(garageX, y1, garageX, y2);
+      doc.text(code, garageX + 2, (y1 + y2) / 2);
     } else {
       const y1 = y + start * ratio;
       const y2 = y + end * ratio;
-      doc.line(x + width, y1, x + width, y2);
-      doc.text(code, x + width - 2, (y1 + y2) / 2, { align: 'right' });
+      doc.line(garageX + garageWidth, y1, garageX + garageWidth, y2);
+      doc.text(code, garageX + garageWidth - 2, (y1 + y2) / 2, { align: 'right' });
     }
   };
 
@@ -131,9 +160,16 @@ function drawElevationPlan(
   y: number,
   maxWidth: number,
 ) {
-  const widthCm = wall === 'front' || wall === 'back' ? config.width : config.length;
-  const scale = Math.min(maxWidth / widthCm, 48 / config.height);
-  const width = widthCm * scale;
+  const isFrontBack = wall === 'front' || wall === 'back';
+  const wallWidthCm = isFrontBack ? config.width : config.length;
+  const carportWidthCm = config.hasCarport && isFrontBack ? (config.carportWidth || 0) : 0;
+  const drawingWidthCm = wallWidthCm + carportWidthCm;
+  const scale = Math.min(maxWidth / drawingWidthCm, 48 / config.height);
+  const width = drawingWidthCm * scale;
+  const garageWidth = wallWidthCm * scale;
+  const carportWidth = carportWidthCm * scale;
+  const garageX = carportWidth > 0 && config.carportSide === 'left' ? x + carportWidth : x;
+  const carportX = config.carportSide === 'left' ? x : garageX + garageWidth;
   const wallHeight = config.height * scale;
   const roofRise = config.roofType === 'dual-slope' ? Math.min(16, width * 0.16) : Math.min(10, width * 0.1);
 
@@ -142,7 +178,33 @@ function drawElevationPlan(
   doc.text(title, x, y - 7);
   doc.setDrawColor(35, 35, 35);
   doc.setLineWidth(0.5);
-  doc.rect(x, y, width, wallHeight);
+  doc.rect(garageX, y, garageWidth, wallHeight);
+  if (carportWidth > 0) {
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(100, 116, 139);
+    doc.setLineDashPattern([2, 1], 0);
+    doc.rect(carportX, y, carportWidth, wallHeight, 'FD');
+    doc.setLineDashPattern([], 0);
+    doc.setLineWidth(1.1);
+    doc.line(carportX, y, carportX, y + wallHeight);
+    doc.line(carportX + carportWidth, y, carportX + carportWidth, y + wallHeight);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('WIATA', carportX + carportWidth / 2, y + wallHeight / 2, { align: 'center' });
+  } else if (config.hasCarport && wall === config.carportSide) {
+    doc.setDrawColor(100, 116, 139);
+    doc.setLineWidth(1.1);
+    doc.line(x, y - 2, x, y + wallHeight);
+    doc.line(x + width, y - 2, x + width, y + wallHeight);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('WIATA - WIDOK BOCZNY', x + width / 2, y + 6, { align: 'center' });
+  }
+  doc.setTextColor(30, 30, 30);
+  doc.setDrawColor(35, 35, 35);
+  doc.setLineWidth(0.5);
   if (config.roofType === 'dual-slope' && (wall === 'front' || wall === 'back')) {
     doc.line(x, y, x + width / 2, y - roofRise);
     doc.line(x + width / 2, y - roofRise, x + width, y);
@@ -167,13 +229,13 @@ function drawElevationPlan(
   };
 
   config.elements.filter(element => element.wall === wall).forEach(element => {
-    const leftCm = Math.max(0, Math.min(widthCm - element.width, widthCm / 2 + element.x - element.width / 2));
+    const leftCm = Math.max(0, Math.min(wallWidthCm - element.width, wallWidthCm / 2 + element.x - element.width / 2));
     const bottomCm = Math.max(0, element.y);
     const boundedHeightCm = Math.max(0, Math.min(element.height, config.height - bottomCm));
     if (boundedHeightCm === 0) return;
-    const elementX = x + leftCm * scale;
+    const elementX = garageX + leftCm * scale;
     const elementY = y + wallHeight - (bottomCm + boundedHeightCm) * scale;
-    const elementWidth = Math.min(element.width, widthCm) * scale;
+    const elementWidth = Math.min(element.width, wallWidthCm) * scale;
     const elementHeight = boundedHeightCm * scale;
     const code = elementCodes[element.type];
 
@@ -202,8 +264,48 @@ function drawElevationPlan(
   doc.line(x - 7, y + wallHeight, x - 3, y + wallHeight);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(`${widthCm} cm`, x + width / 2, y + wallHeight + 10, { align: 'center' });
+  doc.text(`${drawingWidthCm} cm`, x + width / 2, y + wallHeight + 10, { align: 'center' });
+  if (carportWidth > 0) {
+    doc.setFontSize(5.8);
+    doc.text(`Garaz ${wallWidthCm} cm + wiata ${carportWidthCm} cm`, x + width / 2, y + wallHeight + 14, { align: 'center' });
+  }
   doc.text(`${config.height} cm`, x - 8, y + wallHeight / 2, { angle: 90, align: 'center' });
+}
+
+function drawTechnicalLegend(doc: import('jspdf').jsPDF, y: number, includeOffsets = false) {
+  const items = [
+    ['BR', 'Brama'],
+    ['D', 'Drzwi'],
+    ['O', 'Okno'],
+    ['OP', 'Okno PCV'],
+    ['S', 'Swietlik'],
+  ];
+  doc.setFillColor(250, 250, 250);
+  doc.setDrawColor(228, 228, 231);
+  doc.roundedRect(14, y, 182, includeOffsets ? 28 : 23, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(39, 39, 42);
+  doc.setFontSize(8);
+  doc.text('Legenda rysunkow', 19, y + 7);
+
+  items.forEach(([code, label], index) => {
+    const itemX = 19 + index * 34.5;
+    doc.setFillColor(234, 88, 12);
+    doc.rect(itemX, y + 11, 6, 2.2, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.text(code, itemX + 8, y + 13);
+    doc.setFont('helvetica', 'normal');
+    doc.text(label, itemX + 8, y + 17);
+  });
+
+  if (includeOffsets) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(82, 82, 91);
+    doc.text('L - odleglosc od lewej krawedzi sciany   |   P - odleglosc od posadzki', 19, y + 24);
+  }
+  doc.setTextColor(30, 30, 30);
 }
 
 export async function generateOfferPdf(input: OfferPdfInput) {
@@ -217,6 +319,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   const createdAt = new Date();
   const validUntil = new Date(createdAt);
   validUntil.setDate(validUntil.getDate() + input.customer.validDays);
+  const offerBrand = input.customer.brand === 'staleuro' ? 'STAL EURO' : 'GARDHOUSE';
 
   const addHeader = (subtitle: string) => {
     doc.setFillColor(24, 24, 27);
@@ -224,7 +327,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(17);
-    doc.text('GARDHOUSE - OFERTA GARAZU', 14, 11);
+    doc.text(`${offerBrand} - OFERTA GARAZU`, 14, 11);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(safeText(subtitle), 14, 18);
@@ -282,9 +385,9 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   drawDimensionPlan(doc, input.config, 40, 54, 130);
   doc.setFontSize(10);
   doc.text(`Wysokosc scian: ${input.config.height} cm`, 14, 145);
+  drawTechnicalLegend(doc, 151);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text('Pomarańczowe odcinki oznaczaja polozenie otworow. BR - brama, D - drzwi, O - okno, OP - okno PCV, S - swietlik.', 14, 156, { maxWidth: 182 });
   doc.text('Rysunki maja charakter pogladowy. Wymiary produkcyjne wymagaja zatwierdzenia technicznego.', 14, 267);
 
   doc.addPage();
@@ -293,9 +396,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   drawElevationPlan(doc, input.config, 'right', 'Elewacja prawa', 112, 62, 78);
   drawElevationPlan(doc, input.config, 'back', 'Elewacja tylna', 17, 177, 78);
   drawElevationPlan(doc, input.config, 'left', 'Elewacja lewa', 112, 177, 78);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.text('Oznaczenia: BR - brama, D - drzwi, O - okno, OP - okno PCV, S - swietlik. L - odleglosc od lewej krawedzi sciany, P - od posadzki.', 14, 279, { maxWidth: 182 });
+  drawTechnicalLegend(doc, 258, true);
 
   const orderedWalls: WallFace[] = ['front', 'right', 'back', 'left'];
   const availableViews = orderedWalls.filter(wall => Boolean(input.views[wall]));

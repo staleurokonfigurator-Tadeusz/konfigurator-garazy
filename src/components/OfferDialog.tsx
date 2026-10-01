@@ -18,7 +18,7 @@ interface OfferDialogProps {
 }
 
 const EMPTY_CUSTOMER: OfferCustomer = {
-  name: '', company: '', email: '', phone: '', address: '', notes: '', validDays: 14, arUrl: '',
+  brand: 'gardhouse', name: '', company: '', email: '', phone: '', address: '', notes: '', validDays: 14, arUrl: '',
 };
 
 const wait = (ms: number) => new Promise(resolve => window.setTimeout(resolve, ms));
@@ -98,6 +98,12 @@ export default function OfferDialog({ config, estimatedPrice, colors, selectedWa
         </header>
 
         <div className="grid gap-6 p-6 md:grid-cols-2">
+          <label className="text-sm font-bold md:col-span-2">Marka na ofercie
+            <select value={customer.brand} onChange={event => updateCustomer('brand', event.target.value as OfferCustomer['brand'])} className="mt-2 w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 font-normal outline-none focus:border-orange-500">
+              <option value="gardhouse">Gardhouse</option>
+              <option value="staleuro">StalEuro</option>
+            </select>
+          </label>
           <label className="text-sm font-bold">Klient / osoba kontaktowa
             <input maxLength={120} value={customer.name} onChange={event => updateCustomer('name', event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-300 px-4 py-3 font-normal outline-none focus:border-orange-500" />
           </label>

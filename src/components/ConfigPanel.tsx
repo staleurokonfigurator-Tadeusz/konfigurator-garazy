@@ -301,6 +301,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
   }
   
   const gates = config.elements.filter(e => e.type === 'gate');
+  const frontGates = gates.filter(gate => gate.wall === 'front');
 
   const handleCheckout = () => {
     if (isReadOnly) return;
@@ -450,11 +451,11 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
       <Section title="Parametry Bram" icon={<BoxSelect size={20} />}>
         {!isReadOnly && (
           <div className="mb-4 flex justify-between items-center">
-            <span className="text-sm font-medium text-zinc-700">Ilość bram (przód)</span>
+            <span className="text-sm font-medium text-zinc-700">Szybki wybór bram (przód)</span>
             <div className="flex gap-2 bg-white rounded-lg border border-zinc-200 p-1">
-              <button onClick={() => setConfig(prev => ({...prev, elements: prev.elements.filter(e => e.type !== 'gate')}))} className={`px-3 py-1 rounded-md text-sm transition-colors ${gates.length === 0 ? 'bg-zinc-100 font-bold text-[var(--theme)] shadow-sm' : 'text-zinc-500 hover:bg-zinc-50'}`}>0</button>
-              <button onClick={() => { if (gates.length > 1) removeElement(gates[1].id); if (gates.length === 0) addElement('gate', 'front'); }} className={`px-3 py-1 rounded-md text-sm transition-colors ${gates.length === 1 ? 'bg-zinc-100 font-bold text-[var(--theme)] shadow-sm' : 'text-zinc-500 hover:bg-zinc-50'}`}>1</button>
-              <button onClick={() => { if (gates.length < 2) addElement('gate', 'front'); }} className={`px-3 py-1 rounded-md text-sm transition-colors ${gates.length === 2 ? 'bg-zinc-100 font-bold text-[var(--theme)] shadow-sm' : 'text-zinc-500 hover:bg-zinc-50'}`}>2</button>
+              <button onClick={() => setConfig(prev => ({...prev, elements: prev.elements.filter(e => e.type !== 'gate' || e.wall !== 'front')}))} className={`px-3 py-1 rounded-md text-sm transition-colors ${frontGates.length === 0 ? 'bg-zinc-100 font-bold text-[var(--theme)] shadow-sm' : 'text-zinc-500 hover:bg-zinc-50'}`}>0</button>
+              <button onClick={() => { if (frontGates.length > 1) setConfig(prev => ({ ...prev, elements: prev.elements.filter(element => element.type !== 'gate' || element.wall !== 'front' || element.id === frontGates[0].id) })); if (frontGates.length === 0) addElement('gate', 'front'); }} className={`px-3 py-1 rounded-md text-sm transition-colors ${frontGates.length === 1 ? 'bg-zinc-100 font-bold text-[var(--theme)] shadow-sm' : 'text-zinc-500 hover:bg-zinc-50'}`}>1</button>
+              <button onClick={() => { if (frontGates.length < 2) addElement('gate', 'front'); }} className={`px-3 py-1 rounded-md text-sm transition-colors ${frontGates.length >= 2 ? 'bg-zinc-100 font-bold text-[var(--theme)] shadow-sm' : 'text-zinc-500 hover:bg-zinc-50'}`}>2</button>
             </div>
           </div>
         )}
@@ -462,7 +463,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         {gates.length === 0 && (
           <div className="text-sm text-zinc-400 text-center py-6 bg-white border border-dashed rounded-lg mb-4 flex flex-col items-center justify-center gap-2">
             <BoxSelect size={24} className="opacity-20" />
-            Brak bram. Przednia ściana jest całkowicie zabudowana.
+            Brak bram. Dodaj ją na wybranej ścianie w sekcji poniżej.
           </div>
         )}
 
@@ -472,7 +473,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
           <div key={gate.id} className={`bg-white p-4 rounded-xl border-2 transition-all shadow-sm relative group mb-3 ${activeDimId === gate.id ? 'border-[var(--theme)]' : 'border-zinc-200'}`}>
             <div className="flex justify-between items-center mb-4 pr-2">
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-zinc-800">Brama #{i+1}</h3>
+                <h3 className="font-bold text-zinc-800">Brama #{i+1} · {gate.wall === 'front' ? 'przód' : gate.wall === 'back' ? 'tył' : gate.wall === 'left' ? 'lewa ściana' : 'prawa ściana'}</h3>
                 <button 
                   onClick={() => { setSelectedWall(gate.wall); setActiveDimId?.(activeDimId === gate.id ? null : gate.id); }} 
                   className={`p-1.5 rounded-lg transition-colors shadow-sm ${activeDimId === gate.id ? 'bg-[var(--theme)] text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-[var(--theme)]'}`} 
@@ -486,7 +487,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                   const nType = e.target.value as GateType;
                   let nWidth = gate.width;
                   if (nType === 'sectional' && nWidth < 300) nWidth = 300;
-                  setSelectedWall('front'); 
+                  setSelectedWall(gate.wall);
                   updateElement(gate.id, { gateType: nType, width: nWidth, height: 200, isOpen: false, hasDoor: false }); 
                 }} className="text-sm border-zinc-300 rounded-lg p-1 bg-zinc-50 text-zinc-900 font-bold disabled:opacity-80">
                   <option value="up-and-over">Uchylna</option>
@@ -515,7 +516,8 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                 >
                   {(() => {
                     const otherGatesWidth = config.elements.filter(e => e.wall === gate.wall && e.id !== gate.id).reduce((sum, e) => sum + e.width + 20, 0);
-                    const availableWidth = config.width - otherGatesWidth;
+                    const gateWallWidth = gate.wall === 'front' || gate.wall === 'back' ? config.width : config.length;
+                    const availableWidth = gateWallWidth - otherGatesWidth;
                     
                     if (gate.gateType === 'up-and-over') {
                       return (
@@ -571,7 +573,10 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                   <label className="text-[10px] text-zinc-500 font-bold uppercase">Przesunięcie w poziomie (cm)</label>
                   <input type="number" disabled={isReadOnly} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-16 border border-zinc-300 p-1 rounded text-xs bg-zinc-50 outline-none text-right disabled:opacity-80 disabled:cursor-not-allowed" />
                 </div>
-                {!isReadOnly && <input type="range" min={-(config.width / 2) + gate.width/2} max={(config.width / 2) - gate.width/2} step={5} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />}
+                {!isReadOnly && (() => {
+                  const gateWallWidth = gate.wall === 'front' || gate.wall === 'back' ? config.width : config.length;
+                  return <input type="range" min={-(gateWallWidth / 2) + gate.width/2} max={(gateWallWidth / 2) - gate.width/2} step={5} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />;
+                })()}
               </div>
 
               {(gate.gateType === 'up-and-over' || gate.gateType === 'swing') && (
@@ -606,7 +611,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         ))}
       </Section>
 
-      <Section title="Drzwi, Okna i Świetliki" icon={<Layers size={20} />}>
+      <Section title="Bramy, Drzwi, Okna i Świetliki" icon={<Layers size={20} />}>
         <div className="mb-4">
           <label className="text-sm font-medium text-zinc-700 block mb-2">Edytuj ścianę:</label>
           <div className="flex gap-2">
@@ -619,13 +624,25 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         </div>
         {!isReadOnly && (
           <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+            <button onClick={() => addElement('gate')} className="flex-none bg-white border border-zinc-300 text-zinc-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 hover:border-zinc-400"><Plus size={16} /> Brama</button>
             <button onClick={() => addElement('door')} className="flex-none bg-white border border-zinc-300 text-zinc-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 hover:border-zinc-400"><Plus size={16} /> Drzwi</button>
             <button onClick={() => addElement('window')} className="flex-none bg-white border border-zinc-300 text-zinc-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 hover:border-zinc-400"><Plus size={16} /> Okno</button>
             <button onClick={() => addElement('skylight')} className="flex-none bg-white border border-zinc-300 text-zinc-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 hover:border-zinc-400"><Plus size={16} /> Świetlik (mb)</button>
           </div>
         )}
         <div className="space-y-4">
-          {config.elements.filter(e => e.wall === selectedWall && e.type !== 'gate').length === 0 ? (
+          {config.elements.filter(e => e.wall === selectedWall && e.type === 'gate').map((gate, idx) => (
+            <button
+              key={`wall-gate-${gate.id}`}
+              type="button"
+              onClick={() => setActiveDimId?.(gate.id)}
+              className="flex w-full items-center justify-between rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-left text-sm text-zinc-800 hover:border-orange-400"
+            >
+              <span className="font-bold">Brama #{idx + 1} · {gate.width} × {gate.height} cm</span>
+              <span className="text-xs text-orange-700">Ustawienia wyżej</span>
+            </button>
+          ))}
+          {config.elements.filter(e => e.wall === selectedWall).length === 0 ? (
             <div className="text-sm text-zinc-400 text-center py-4 bg-white border border-dashed rounded-lg">Brak elementów na tej ścianie.</div>
           ) : (
             config.elements.filter(e => e.wall === selectedWall && e.type !== 'gate').map((el, idx) => {
