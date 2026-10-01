@@ -974,6 +974,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
           config={config}
           estimatedPrice={calculatedPrice}
           colors={dbColors}
+          addons={customAddons}
           selectedWall={selectedWall}
           setSelectedWall={setSelectedWall}
           storeUrl={storeUrl || appData?.storeUrl}

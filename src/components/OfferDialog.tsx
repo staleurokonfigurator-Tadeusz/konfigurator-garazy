@@ -10,6 +10,7 @@ interface OfferDialogProps {
   config: GarageConfig;
   estimatedPrice: number;
   colors: Array<{ id: string; label?: string }>;
+  addons?: Array<{ id: string; label?: string }>;
   selectedWall: WallFace;
   setSelectedWall: (wall: WallFace) => void;
   onClose: () => void;
@@ -23,7 +24,7 @@ const EMPTY_CUSTOMER: OfferCustomer = {
 
 const wait = (ms: number) => new Promise(resolve => window.setTimeout(resolve, ms));
 
-export default function OfferDialog({ config, estimatedPrice, colors, selectedWall, setSelectedWall, onClose, storeUrl, requestARExport }: OfferDialogProps) {
+export default function OfferDialog({ config, estimatedPrice, colors, addons = [], selectedWall, setSelectedWall, onClose, storeUrl, requestARExport }: OfferDialogProps) {
   const [customer, setCustomer] = useState<OfferCustomer>(EMPTY_CUSTOMER);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
@@ -83,6 +84,7 @@ export default function OfferDialog({ config, estimatedPrice, colors, selectedWa
         config: offerConfig,
         estimatedPrice: wordpressOffer.verifiedPrice,
         colorLabels,
+        optionLabels: Object.fromEntries(addons.map(addon => [addon.id, addon.label || addon.id])),
         views,
         priceVerified: true,
       });
@@ -151,5 +153,4 @@ export default function OfferDialog({ config, estimatedPrice, colors, selectedWa
     </div>
   );
 }
-
 

@@ -1,4 +1,8 @@
 import type { GarageConfig, GarageElement, WallFace } from '@/types';
+import {
+  PDF_FONT, PDF_INK, PDF_MUTED, PDF_BOTTOM,
+  safePdfText, loadOfferFonts, drawPdfCard, drawPdfImage, createOfferLayout,
+} from './offerPdfLayout';
 
 export interface OfferCustomer {
   brand: 'gardhouse' | 'staleuro';
@@ -19,6 +23,7 @@ export interface OfferPdfInput {
   estimatedPrice: number;
   currency?: string;
   colorLabels: Record<string, string>;
+  optionLabels?: Record<string, string>;
   views: Partial<Record<WallFace, string>>;
   priceVerified?: boolean;
 }
@@ -26,30 +31,34 @@ export interface OfferPdfInput {
 const wallNames: Record<WallFace, string> = {
   front: 'Widok z przodu',
   right: 'Widok z prawej strony',
-  back: 'Widok z tylu',
+  back: 'Widok z tyłu',
   left: 'Widok z lewej strony',
 };
 
 const gateNames: Record<string, string> = {
   'up-and-over': 'uchylna',
-  swing: 'dwuskrzydlowa',
+  swing: 'dwuskrzydłowa',
   sectional: 'segmentowa',
 };
 
 const roofNames: Record<string, string> = {
   'dual-slope': 'dwuspadowy prawo-lewo',
-  'dual-slope-front-back': 'dwuspadowy przod-tyl',
-  'slope-front': 'spad w przod',
-  'slope-back': 'spad w tyl',
+  'dual-slope-front-back': 'dwuspadowy przód-tył',
+  'slope-front': 'spad w przód',
+  'slope-back': 'spad w tył',
   'slope-left': 'spad w lewo',
   'slope-right': 'spad w prawo',
 };
 
-const ascii = (value: string) => value
-  .replace(/[ąćęłńóśźż]/g, char => ({ ą: 'a', ć: 'c', ę: 'e', ł: 'l', ń: 'n', ó: 'o', ś: 's', ź: 'z', ż: 'z' }[char] || char))
-  .replace(/[ĄĆĘŁŃÓŚŹŻ]/g, char => ({ Ą: 'A', Ć: 'C', Ę: 'E', Ł: 'L', Ń: 'N', Ó: 'O', Ś: 'S', Ź: 'Z', Ż: 'Z' }[char] || char));
+const safeText = safePdfText;
 
-const safeText = (value: unknown, maxLength = 500) => ascii(String(value ?? '').trim().slice(0, maxLength));
+const profileNames: Record<string, string> = {
+  'pionowe-t7': 'Pionowe T-7', 'poziome-t7': 'Poziome T-7',
+  'pionowe-t14': 'Pionowe T-14', 'poziome-t14': 'Poziome T-14',
+  'pionowe-t17': 'Pionowe T-17 (mini rąbek)', 'poziome-t17': 'Poziome T-17',
+};
+const faceNames: Record<WallFace, string> = { front: 'Przód', back: 'Tył', left: 'Lewa', right: 'Prawa' };
+const profileLabel = (profile: string | undefined) => profileNames[profile || ''] || profile || 'Według konfiguracji';
 
 function getCarportWidthCm(config: GarageConfig) {
   const rawEnabled: unknown = (config as unknown as Record<string, unknown>).hasCarport;
@@ -65,23 +74,17 @@ function getCarportWidthCm(config: GarageConfig) {
 }
 
 function elementDescription(element: GarageElement) {
-  const dimensions = `${element.width} x ${element.height} cm`;
   if (element.type === 'gate') {
-    return `Brama ${gateNames[element.gateType || 'up-and-over'] || element.gateType}: ${dimensions}, profil ${element.profile || 'wg konfiguracji'}`;
+    return `Brama ${gateNames[element.gateType || 'up-and-over'] || element.gateType}\n${profileLabel(element.profile)}${element.hasDoor ? '\nDrzwi w bramie' : ''}`;
   }
-  const labels: Record<string, string> = {
-    door: 'Drzwi',
-    window: 'Okno',
-    'pvc-window': 'Okno PCV',
-    skylight: 'Swietlik',
-  };
-  return `${labels[element.type] || element.type}: ${dimensions}`;
+  const labels: Record<string, string> = { door: 'Drzwi', window: 'Okno', 'pvc-window': 'Okno PCV', skylight: 'Świetlik' };
+  return `${labels[element.type] || element.type}${element.type === 'door' ? `\nZawiasy: ${element.hingeSide === 'right' ? 'prawe' : 'lewe'}` : ''}`;
 }
 
-function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: number, y: number, maxWidth: number) {
+function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: number, y: number, maxWidth: number, maxHeight = 70) {
   const carportWidthCm = getCarportWidthCm(config);
   const totalWidthCm = config.width + carportWidthCm;
-  const ratio = Math.min(maxWidth / totalWidthCm, 70 / config.length);
+  const ratio = Math.min(maxWidth / totalWidthCm, maxHeight / config.length);
   const width = totalWidthCm * ratio;
   const garageWidth = config.width * ratio;
   const carportWidth = carportWidthCm * ratio;
@@ -102,7 +105,7 @@ function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: 
     [[carportX, y], [carportX + carportWidth, y], [carportX, y + length], [carportX + carportWidth, y + length]].forEach(([postX, postY]) => {
       doc.rect(postX - 0.8, postY - 0.8, 1.6, 1.6, 'F');
     });
-    doc.setFont('helvetica', 'bold');
+    doc.setFont(PDF_FONT, 'bold');
     doc.setFontSize(7);
     doc.setTextColor(71, 85, 105);
     doc.text('WIATA', carportX + carportWidth / 2, y + length / 2, { align: 'center', angle: 90 });
@@ -132,16 +135,16 @@ function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: 
   doc.text(`${config.length} cm`, x - 8, y + length / 2, { angle: 90, align: 'center' });
   if (carportWidth > 0) {
     doc.setFontSize(6.5);
-    doc.text(`Garaz ${config.width} cm`, garageX + garageWidth / 2, y + length + 8, { align: 'center' });
+    doc.text(`Garaż ${config.width} cm`, garageX + garageWidth / 2, y + length + 8, { align: 'center' });
     doc.text(`Wiata ${carportWidthCm} cm`, carportX + carportWidth / 2, y + length + 8, { align: 'center' });
   }
 
-  const markOpening = (element: GarageElement) => {
+  const markOpening = (element: GarageElement, index: number) => {
     const isHorizontalWall = element.wall === 'front' || element.wall === 'back';
     const wallSize = isHorizontalWall ? config.width : config.length;
     const start = Math.max(0, Math.min(wallSize, wallSize / 2 + element.x - element.width / 2));
     const end = Math.max(start, Math.min(wallSize, start + element.width));
-    const code = element.type === 'gate' ? 'BR' : element.type === 'door' ? 'D' : element.type === 'pvc-window' ? 'OP' : element.type === 'window' ? 'O' : 'S';
+    const code = (element.type === 'gate' ? 'BR' : element.type === 'door' ? 'D' : element.type === 'pvc-window' ? 'OP' : element.type === 'window' ? 'O' : 'S') + (index + 1);
 
     doc.setDrawColor(234, 88, 12);
     doc.setLineWidth(1.4);
@@ -232,8 +235,9 @@ function drawElevationPlan(
     ], sectionX, leftY, [1, 1], style, true);
   };
 
-  doc.setFont('helvetica', 'bold');
+  doc.setFont(PDF_FONT, 'bold');
   doc.setFontSize(10);
+  doc.setTextColor(PDF_INK);
   doc.text(title, x, y - visibleRoofRise - 6);
   doc.setDrawColor(35, 35, 35);
   doc.setLineWidth(0.5);
@@ -248,7 +252,7 @@ function drawElevationPlan(
     doc.setLineWidth(1.1);
     doc.line(carportX, roofBaseYAt(carportX), carportX, y + wallHeight);
     doc.line(carportX + carportWidth, roofBaseYAt(carportX + carportWidth), carportX + carportWidth, y + wallHeight);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont(PDF_FONT, 'bold');
     doc.setFontSize(6.5);
     doc.setTextColor(71, 85, 105);
     doc.text('WIATA', carportX + carportWidth / 2, y + wallHeight / 2, { align: 'center' });
@@ -261,7 +265,7 @@ function drawElevationPlan(
     doc.setLineWidth(1.1);
     doc.line(x, roofBaseYAt(x) - 2.5, x, y + wallHeight);
     doc.line(x + width, roofBaseYAt(x + width) - 2.5, x + width, y + wallHeight);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont(PDF_FONT, 'bold');
     doc.setFontSize(6.5);
     doc.setTextColor(71, 85, 105);
     doc.text('WIATA', x + 5, y + 7);
@@ -306,7 +310,8 @@ function drawElevationPlan(
     gate: 'BR', door: 'D', window: 'O', 'pvc-window': 'OP', skylight: 'S',
   };
 
-  config.elements.filter(element => element.wall === wall).forEach(element => {
+  config.elements.forEach((element, index) => {
+    if (element.wall !== wall) return;
     const leftCm = Math.max(0, Math.min(wallWidthCm - element.width, wallWidthCm / 2 + element.x - element.width / 2));
     const bottomCm = Math.max(0, element.y);
     const boundedHeightCm = Math.max(0, Math.min(element.height, config.height - bottomCm));
@@ -324,15 +329,20 @@ function drawElevationPlan(
     doc.setLineWidth(0.4);
     doc.rect(elementX, elementY, elementWidth, elementHeight, 'FD');
     doc.setTextColor(55, 55, 55);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.2);
-    doc.text(`${code} ${element.width}x${element.height}`, elementX + elementWidth / 2, elementY + Math.max(4, elementHeight / 2), { align: 'center', maxWidth: Math.max(9, elementWidth - 1) });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(5.2);
-    doc.text(`L:${Math.round(leftCm)} P:${Math.round(bottomCm)} cm`, elementX + elementWidth / 2, elementY + elementHeight + 3, { align: 'center' });
+    doc.setFont(PDF_FONT, 'bold');
+    // Numer łączy otwór z tabelą; małe okna nie dostają nachodzących na siebie opisów.
+    const symbol = `${code}${index + 1}`;
+    if (elementWidth >= 12 && elementHeight >= 8) {
+      doc.setFontSize(6.2);
+      doc.text([symbol, `${element.width} x ${element.height}`], elementX + elementWidth / 2, elementY + elementHeight / 2 - 0.7, { align: 'center', lineHeightFactor: 1.3 });
+    } else if (elementWidth >= 4 && elementHeight >= 3) {
+      doc.setFontSize(5.2);
+      doc.text(symbol, elementX + elementWidth / 2, elementY + elementHeight / 2 + 0.6, { align: 'center' });
+    }
   });
 
   doc.setTextColor(30, 30, 30);
+  doc.setDrawColor(PDF_MUTED);
   doc.setLineWidth(0.2);
   doc.line(x, y + wallHeight + 5, x + width, y + wallHeight + 5);
   doc.line(x, y + wallHeight + 3, x, y + wallHeight + 7);
@@ -340,44 +350,38 @@ function drawElevationPlan(
   doc.line(x - 5, y, x - 5, y + wallHeight);
   doc.line(x - 7, y, x - 3, y);
   doc.line(x - 7, y + wallHeight, x - 3, y + wallHeight);
-  doc.setFont('helvetica', 'normal');
+  doc.setFont(PDF_FONT, 'normal');
   doc.setFontSize(8);
   doc.text(`${drawingWidthCm} cm`, x + width / 2, y + wallHeight + 10, { align: 'center' });
   if (carportWidth > 0) {
     doc.setFontSize(5.8);
-    doc.text(`Garaz ${wallWidthCm} cm + wiata ${carportWidthCm} cm`, x + width / 2, y + wallHeight + 14, { align: 'center' });
+    doc.text(`Garaż ${wallWidthCm} cm + wiata ${carportWidthCm} cm`, x + width / 2, y + wallHeight + 14, { align: 'center' });
   }
   doc.text(`${config.height} cm`, x - 8, y + wallHeight / 2, { angle: 90, align: 'center' });
 }
 
 function drawCarportTechnicalPage(doc: import('jspdf').jsPDF, config: GarageConfig) {
-  const carportWidthCm = getCarportWidthCm(config);
+  const carportWidth = getCarportWidthCm(config);
   const carportSide: WallFace = config.carportSide === 'left' ? 'left' : 'right';
-  const oppositeSide: WallFace = carportSide === 'left' ? 'right' : 'left';
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(63, 63, 70);
-  doc.text(
-    `Wiata zintegrowana: ${carportWidthCm} cm, strona ${carportSide === 'left' ? 'lewa' : 'prawa'}. Linie niebieskie oznaczaja konstrukcje i slupy wiaty.`,
-    14,
-    32,
-    { maxWidth: 182 },
-  );
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(30, 30, 30);
-  doc.text('Rzut z gory - garaz z wiata', 14, 46);
-  drawDimensionPlan(doc, config, 30, 56, 150);
-
-  drawElevationPlan(doc, config, 'front', 'Elewacja frontowa z wiata', 24, 157, 162, 38);
-
-  doc.setFillColor(239, 246, 255);
-  doc.setDrawColor(37, 99, 235);
-  doc.roundedRect(18, 222, 174, 64, 2, 2, 'FD');
-  drawElevationPlan(doc, config, carportSide, `Widok od strony wiaty (${carportSide === 'left' ? 'lewa' : 'prawa'})`, 28, 247, 70, 28);
-  drawElevationPlan(doc, config, oppositeSide, 'Widok od strony przeciwnej', 112, 247, 70, 28);
+  doc.setFont(PDF_FONT, 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(PDF_MUTED);
+  doc.text(`Wiata: ${carportWidth} cm, strona ${carportSide === 'left' ? 'lewa' : 'prawa'}. Konstrukcja wiaty oznaczona linią przerywaną.`, 16, 55, { maxWidth: 178 });
+  drawPdfCard(doc, 16, 65, 178, 110, '#f8fafc');
+  doc.setFont(PDF_FONT, 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(PDF_INK);
+  doc.text('Rzut z góry - garaż z wiatą', 22, 76);
+  const scale = Math.min(142 / (config.width + carportWidth), 65 / config.length);
+  drawDimensionPlan(doc, config, 105 - (config.width + carportWidth) * scale / 2, 88, 142, 65);
+  doc.setFont(PDF_FONT, 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(PDF_MUTED);
+  doc.text('Widoki uzupełniają rysunki wszystkich czterech elewacji.', 16, 184);
+  drawPdfCard(doc, 16, 191, 85, 81);
+  drawPdfCard(doc, 109, 191, 85, 81);
+  drawElevationPlan(doc, config, 'front', 'Front z wiatą', 27, 220, 66, 29);
+  drawElevationPlan(doc, config, carportSide, `Strona wiaty - ${faceNames[carportSide].toLowerCase()}`, 120, 220, 66, 29);
 }
 
 function drawTechnicalLegend(doc: import('jspdf').jsPDF, y: number, includeOffsets = false) {
@@ -386,179 +390,284 @@ function drawTechnicalLegend(doc: import('jspdf').jsPDF, y: number, includeOffse
     ['D', 'Drzwi'],
     ['O', 'Okno'],
     ['OP', 'Okno PCV'],
-    ['S', 'Swietlik'],
+    ['S', 'Świetlik'],
   ];
   doc.setFillColor(250, 250, 250);
   doc.setDrawColor(228, 228, 231);
-  doc.roundedRect(14, y, 182, includeOffsets ? 28 : 23, 2, 2, 'FD');
-  doc.setFont('helvetica', 'bold');
+  doc.roundedRect(16, y, 178, includeOffsets ? 31 : 27, 2, 2, 'FD');
+  doc.setFont(PDF_FONT, 'bold');
   doc.setTextColor(39, 39, 42);
   doc.setFontSize(8);
-  doc.text('Legenda rysunkow', 19, y + 7);
+  doc.text('Legenda rysunków', 22, y + 7);
 
   items.forEach(([code, label], index) => {
-    const itemX = 19 + index * 34.5;
+    const itemX = 22 + index * 33.5;
     doc.setFillColor(234, 88, 12);
     doc.rect(itemX, y + 11, 6, 2.2, 'F');
-    doc.setFont('helvetica', 'bold');
+    doc.setFont(PDF_FONT, 'bold');
     doc.setFontSize(6.5);
     doc.text(code, itemX + 8, y + 13);
-    doc.setFont('helvetica', 'normal');
+    doc.setFont(PDF_FONT, 'normal');
     doc.text(label, itemX + 8, y + 17);
   });
 
   if (includeOffsets) {
-    doc.setFont('helvetica', 'normal');
+    doc.setFont(PDF_FONT, 'normal');
     doc.setFontSize(6.5);
     doc.setTextColor(82, 82, 91);
-    doc.text('L - odleglosc od lewej krawedzi sciany   |   P - odleglosc od posadzki', 19, y + 24);
+    doc.text('L - od lewej krawędzi ściany   |   P - od posadzki', 22, y + 23);
   }
+  doc.setFont(PDF_FONT, 'normal');
+  doc.setFontSize(6.5);
+  doc.setTextColor(PDF_MUTED);
+  doc.text('Numery przy symbolach odpowiadają LP. w tabeli elementów. Położenie i wymiary podano w tabeli.', 22, y + (includeOffsets ? 28 : 24));
   doc.setTextColor(30, 30, 30);
 }
 
 export async function generateOfferPdf(input: OfferPdfInput) {
-  const [{ jsPDF }, QRCode] = await Promise.all([
-    import('jspdf'),
-    import('qrcode'),
-  ]);
-
-  const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
+  const [{ jsPDF }, QRCode] = await Promise.all([import('jspdf'), import('qrcode')]);
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true, putOnlyUsedFonts: true });
+  await loadOfferFonts(doc);
+  const config = input.config;
   const currency = input.currency || 'PLN';
   const createdAt = new Date();
   const validUntil = new Date(createdAt);
   validUntil.setDate(validUntil.getDate() + input.customer.validDays);
-  const offerBrand = input.customer.brand === 'staleuro' ? 'STAL EURO' : 'GARDHOUSE';
-
-  const addHeader = (subtitle: string) => {
-    doc.setFillColor(24, 24, 27);
-    doc.rect(0, 0, 210, 25, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(17);
-    doc.text(`${offerBrand} - OFERTA GARAZU`, 14, 11);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.text(safeText(subtitle), 14, 18);
-    doc.setTextColor(30, 30, 30);
-  };
-
-  addHeader(`Oferta nr ${safeText(input.offerNumber, 60)}`);
-  doc.setFontSize(10);
-  doc.text(`Data: ${createdAt.toLocaleDateString('pl-PL')}`, 14, 34);
-  doc.text(`Wazna do: ${validUntil.toLocaleDateString('pl-PL')}`, 14, 40);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Klient', 14, 51);
-  doc.setFont('helvetica', 'normal');
-  const customerLines = [
-    input.customer.name,
-    input.customer.company,
-    input.customer.email,
-    input.customer.phone,
-    input.customer.address,
-  ].map(value => safeText(value, 160)).filter(Boolean);
-  doc.text(customerLines.length ? customerLines : ['Nie podano danych klienta'], 14, 58);
-
-  doc.setFillColor(245, 245, 245);
-  doc.roundedRect(112, 34, 84, 34, 3, 3, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text(input.priceVerified ? 'Cena potwierdzona' : 'Cena orientacyjna', 120, 45);
-  doc.setFontSize(22);
-  doc.text(`${input.estimatedPrice.toLocaleString('pl-PL')} ${currency}`, 120, 58);
-
-  doc.setFontSize(13);
-  doc.text('Konfiguracja', 14, 87);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
-  const details = [
-    `Wymiary: ${input.config.width} x ${input.config.length} x ${input.config.height} cm`,
-    `Dach: ${roofNames[input.config.roofType] || input.config.roofType}`,
-    `Profil scian: ${input.config.wallProfile}`,
-    `Profil dachu: ${input.config.roofProfile}`,
-    `Kolor scian: ${input.colorLabels[input.config.wallColor] || input.config.wallColor}`,
-    `Kolor dachu: ${input.colorLabels[input.config.roofColor] || input.config.roofColor}`,
-    `Kolor bramy: ${input.colorLabels[input.config.gateColor] || input.config.gateColor}`,
-    `Rynny: ${input.config.gutters ? 'tak' : 'nie'}`,
-    `Wiata zintegrowana: ${getCarportWidthCm(input.config) > 0 ? `${getCarportWidthCm(input.config)} cm, ${input.config.carportSide || 'prawa'}` : 'nie'}`,
-    ...input.config.elements.map(elementDescription),
-  ].map(line => safeText(line, 220));
-  doc.text(details, 14, 95, { maxWidth: 182, lineHeightFactor: 1.35 });
-
-  doc.addPage();
-  addHeader('Rzut techniczny i podstawowe wymiary');
-  doc.setFontSize(13);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Rzut z gory', 14, 38);
-  drawDimensionPlan(doc, input.config, 40, 54, 130);
-  doc.setFontSize(10);
-  doc.text(`Wysokosc scian: ${input.config.height} cm`, 14, 145);
-  drawTechnicalLegend(doc, 151);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text('Rysunki maja charakter pogladowy. Wymiary produkcyjne wymagaja zatwierdzenia technicznego.', 14, 267);
-
-  doc.addPage();
-  addHeader('Rysunki techniczne - wszystkie cztery sciany');
-  drawElevationPlan(doc, input.config, 'front', 'Elewacja frontowa', 17, 62, 78);
-  drawElevationPlan(doc, input.config, 'right', 'Elewacja prawa', 112, 62, 78);
-  drawElevationPlan(doc, input.config, 'back', 'Elewacja tylna', 17, 177, 78);
-  drawElevationPlan(doc, input.config, 'left', 'Elewacja lewa', 112, 177, 78);
-  drawTechnicalLegend(doc, 258, true);
-
-  if (getCarportWidthCm(input.config) > 0) {
-    doc.addPage();
-    addHeader('Rysunki techniczne - wiata zintegrowana');
-    drawCarportTechnicalPage(doc, input.config);
-  }
-
+  const formatDate = (date: Date) => date.toLocaleDateString('pl-PL', { timeZone: 'Europe/Warsaw' });
+  const brand = input.customer.brand === 'staleuro' ? 'STAL EURO' : 'GARDHOUSE';
+  const accent = input.customer.brand === 'staleuro' ? '#dc2626' : '#ea580c';
+  const layout = createOfferLayout(doc, brand, input.offerNumber, accent);
+  const carportWidth = getCarportWidthCm(config);
+  const color = (id: string) => safeText(input.colorLabels[id] || id, 180);
   const orderedWalls: WallFace[] = ['front', 'right', 'back', 'left'];
   const availableViews = orderedWalls.filter(wall => Boolean(input.views[wall]));
+  const price = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    .format(input.estimatedPrice) + (currency === 'PLN' ? ' zł' : ` ${safeText(currency, 8)}`);
+  doc.setProperties({
+    title: `${brand} - oferta ${safeText(input.offerNumber, 60)}`,
+    subject: 'Indywidualna konfiguracja garażu, rysunki i wizualizacje',
+    author: brand, creator: 'Konfigurator garaży',
+  });
+
+  // Strona otwierająca: czytelne dane klienta, jedna cena i wizualizacja bez rozciągania.
+  layout.header(carportWidth > 0 ? 'Oferta na garaż z wiatą' : 'Oferta na garaż');
+  layout.font(8.5, false, PDF_MUTED);
+  doc.text(`Data przygotowania: ${formatDate(createdAt)}`, 16, 56);
+  doc.text(`Ważna do: ${formatDate(validUntil)}`, 194, 56, { align: 'right' });
+  const customerBlocks = [
+    { value: input.customer.name || 'Nie podano danych klienta', size: 10.5, bold: true, limit: 120 },
+    { value: input.customer.company, size: 9, bold: false, limit: 120 },
+    { value: input.customer.email, size: 9, bold: false, limit: 160 },
+    { value: input.customer.phone, size: 9, bold: false, limit: 40 },
+    { value: input.customer.address, size: 9, bold: false, limit: 240 },
+  ].filter(block => block.value).map(block => {
+    layout.font(block.size, block.bold);
+    return { ...block, lines: doc.splitTextToSize(safeText(block.value, block.limit), 84) as string[] };
+  });
+  const customerHeight = Math.max(60, 23 + customerBlocks.reduce((height, block) => height + block.lines.length * 4.2 + 1.8, 0));
+  drawPdfCard(doc, 16, 65, 100, customerHeight);
+  layout.font(7.5, true, PDF_MUTED);
+  doc.text('PRZYGOTOWANO DLA', 24, 76);
+  let customerY = 85;
+  customerBlocks.forEach(block => {
+    layout.font(block.size, block.bold);
+    doc.text(block.lines, 24, customerY, { lineHeightFactor: 1.3 });
+    customerY += block.lines.length * 4.2 + 1.8;
+  });
+  drawPdfCard(doc, 124, 65, 70, customerHeight, PDF_INK);
+  doc.setFillColor(accent);
+  doc.roundedRect(132, 73, 16, 1.2, 0.5, 0.5, 'F');
+  layout.font(9, true, '#ffffff');
+  doc.text(input.priceVerified ? 'Cena oferty' : 'Cena orientacyjna', 132, 84);
+  let priceSize = 23;
+  layout.font(priceSize, true, '#ffffff');
+  while (doc.getTextWidth(price) > 54 && priceSize > 11) layout.font(--priceSize, true, '#ffffff');
+  doc.text(price, 132, 98);
+  layout.font(7.5, false, '#cbd5e1');
+  doc.text(input.priceVerified ? 'Obliczona według aktualnego cennika.' : 'Do potwierdzenia przez sprzedawcę.', 132, 109, { maxWidth: 54, lineHeightFactor: 1.4 });
+
+  const heroY = 65 + customerHeight + 9;
+  const hero = input.views.front || input.views[availableViews[0]];
+  const heroHeight = hero ? Math.max(32, Math.min(86, 231 - heroY)) : 47;
+  drawPdfCard(doc, 16, heroY, 178, heroHeight, '#f8fafc');
+  if (hero) {
+    drawPdfImage(doc, hero, 20, heroY + 3, 170, heroHeight - 13);
+    layout.font(7, false, PDF_MUTED);
+    doc.text('Wizualizacja konfiguracji przypisanej do tej oferty', 23, heroY + heroHeight - 4);
+  } else {
+    layout.font(11, true);
+    doc.text('Konfiguracja indywidualna', 24, heroY + 12);
+    layout.font(9, false, PDF_MUTED);
+    doc.text(`Dach ${roofNames[config.roofType] || config.roofType}\nŚciany: ${profileLabel(config.wallProfile)} / ${color(config.wallColor)}`, 24, heroY + 22, { maxWidth: 158, lineHeightFactor: 1.45 });
+  }
+  const metricY = heroY + heroHeight + 7;
+  const metrics = [['SZEROKOŚĆ GARAŻU', config.width], ['DŁUGOŚĆ', config.length], ['WYSOKOŚĆ ŚCIAN', config.height]] as const;
+  metrics.forEach(([label, value], index) => {
+    const x = 16 + index * 61;
+    drawPdfCard(doc, x, metricY, 56, 24);
+    layout.font(7, true, PDF_MUTED);
+    doc.text(label, x + 6, metricY + 8);
+    layout.font(16, true);
+    doc.text(`${(value / 100).toLocaleString('pl-PL', { maximumFractionDigits: 2 })} m`, x + 6, metricY + 18);
+  });
+  if (metricY + 31 < PDF_BOTTOM) {
+    layout.font(7, false, PDF_MUTED);
+    doc.text('Szczegółowa specyfikacja, rysunki i model AR na kolejnych stronach.', 16, metricY + 31);
+  }
+
+  // Specyfikacja i otwory nie mają sztywnej wysokości: tabela przechodzi na kolejną stronę.
+  layout.page('Specyfikacja i wyposażenie');
+  layout.font(9, false, PDF_MUTED);
+  doc.text('Zakres konfiguracji stanowiący podstawę tej oferty.', 16, 55);
+  const builtInOptions = new Set(['roofTile', 'cornerFlashings', 'roofFlashings']);
+  const extraOptions = (config.extraOptions || []).filter(id => !builtInOptions.has(id))
+    .map(id => input.optionLabels?.[id] || id);
+  const carportWalls = ['front', 'back', 'side'].filter(face => config.carportWalls?.[face as keyof NonNullable<GarageConfig['carportWalls']>] === true)
+    .map(face => face === 'front' ? 'przód' : face === 'back' ? 'tył' : 'bok').join(', ');
+  const details = [
+    ['Wymiary garażu', `${config.width} x ${config.length} x ${config.height} cm (szer. x dł. x wys. ścian)`],
+    ['Typ dachu', roofNames[config.roofType] || config.roofType],
+    ['Pokrycie dachu', config.extraOptions?.includes('roofTile') ? 'Blachodachówka' : `Blacha trapezowa / ${profileLabel(config.roofProfile)}`],
+    ['Ściany', `${profileLabel(config.wallProfile)}\nKolor: ${color(config.wallColor)}`],
+    ['Dach - kolor', color(config.roofColor)],
+    ['Bramy - wykończenie', `${profileLabel(config.gateProfile)}\nKolor: ${color(config.gateColor)}`],
+    ['Drzwi / okna - kolory', `Drzwi: ${color(config.doorColor)}\nOkna: ${color(config.windowColor)}`],
+    ['Rynny i rury spustowe', config.gutters ? `Tak / ${color(config.gutterColor)}` : 'Nie'],
+    ['Obróbki narożne', config.extraOptions?.includes('cornerFlashings') ? `Tak / ${color(config.cornerFlashingColor)}` : 'Nie'],
+    ['Obróbki dachu', config.extraOptions?.includes('roofFlashings') ? `Tak / ${color(config.roofFlashingColor)}` : 'Nie'],
+    ['Wiata zintegrowana', carportWidth > 0 ? `Szerokość ${carportWidth} cm / strona ${config.carportSide === 'left' ? 'lewa' : 'prawa'}\nZabudowa: ${carportWalls || 'bez zabudowy'}` : 'Nie'],
+    ['Usunięcie folii ochronnej', config.removeFoil ? 'Tak' : 'Nie'],
+    ['Opcje dodatkowe', extraOptions.length ? extraOptions.join(', ') : 'Brak dodatkowych opcji'],
+  ];
+  let specY = layout.table(['PARAMETR', 'WYBRANY WARIANT'], details, [55, 123], 63, 'Specyfikacja - ciąg dalszy') + 12;
+  if (specY + 33 > PDF_BOTTOM) { layout.page('Bramy, drzwi i okna'); specY = 59; }
+  specY = layout.section('Bramy, drzwi, okna i świetliki', specY);
+  if (config.elements.length) {
+    const rows = config.elements.map((element, index) => {
+      const width = element.wall === 'front' || element.wall === 'back' ? config.width : config.length;
+      const left = Math.max(0, Math.min(width - element.width, width / 2 + element.x - element.width / 2));
+      return [String(index + 1).padStart(2, '0'), elementDescription(element), faceNames[element.wall],
+        `${element.width} x ${element.height} cm`, `L: ${Math.round(left)} cm\nP: ${Math.round(element.y)} cm`];
+    });
+    specY = layout.table(['LP.', 'ELEMENT / WARIANT', 'ŚCIANA', 'SZER. x WYS.', 'POŁOŻENIE'], rows, [12, 60, 23, 38, 45], specY, 'Elementy - ciąg dalszy');
+    if (specY + 8 <= PDF_BOTTOM) {
+      layout.font(7.5, false, PDF_MUTED);
+      doc.text('L - od lewej krawędzi ściany; P - od posadzki. Szczegóły pokazano na rysunkach.', 16, specY + 7);
+    }
+  } else {
+    layout.font(9, false, PDF_MUTED);
+    doc.text('Nie wybrano bram, drzwi, okien ani świetlików.', 16, specY + 4);
+  }
+
+  layout.page('Rzut z góry');
+  layout.font(9, false, PDF_MUTED);
+  doc.text('Rozmieszczenie otworów oraz podstawowe wymiary w centymetrach.', 16, 55);
+  drawPdfCard(doc, 16, 66, 178, 126, '#f8fafc');
+  const planScale = Math.min(142 / (config.width + carportWidth), 78 / config.length);
+  drawDimensionPlan(doc, config, 105 - (config.width + carportWidth) * planScale / 2, 89, 142, 78);
+  layout.font(8, true, PDF_MUTED);
+  doc.text('PRZÓD GARAŻU', 105, 89 + config.length * planScale + 17, { align: 'center' });
+  drawTechnicalLegend(doc, 202);
+  layout.font(10, true);
+  doc.text(`Wysokość ścian: ${config.height} cm`, 16, 240);
+  layout.font(9, false, PDF_MUTED);
+  doc.text(carportWidth > 0 ? `Łączna szerokość garażu z wiatą: ${config.width + carportWidth} cm.` : `Powierzchnia garażu: ${(config.width * config.length / 10000).toLocaleString('pl-PL')} m².`, 16, 250);
+  layout.font(7.5, false, PDF_MUTED);
+  doc.text('Rysunki poglądowe. Wymiary produkcyjne wymagają zatwierdzenia technicznego.', 16, 269);
+
+  layout.page('Cztery elewacje');
+  layout.font(9, false, PDF_MUTED);
+  doc.text('Położenie bram, drzwi, okien i świetlików dla każdej ściany.', 16, 55);
+  [[16, 65, 85, 87], [109, 65, 85, 87], [16, 158, 85, 84], [109, 158, 85, 84]].forEach(([x, y, w, h]) => drawPdfCard(doc, x, y, w, h));
+  drawElevationPlan(doc, config, 'front', 'Elewacja frontowa', 27, 93, 66, 38);
+  drawElevationPlan(doc, config, 'right', 'Elewacja prawa', 120, 93, 66, 38);
+  drawElevationPlan(doc, config, 'back', 'Elewacja tylna', 27, 187, 66, 38);
+  drawElevationPlan(doc, config, 'left', 'Elewacja lewa', 120, 187, 66, 38);
+  drawTechnicalLegend(doc, 244, true);
+
+  if (carportWidth > 0) {
+    layout.page('Wiata zintegrowana');
+    drawCarportTechnicalPage(doc, config);
+  }
+
   for (let index = 0; index < availableViews.length; index += 2) {
-    doc.addPage();
-    addHeader('Wizualizacje konfiguracji');
+    layout.page('Wizualizacje Twojego garażu');
+    layout.font(9, false, PDF_MUTED);
+    doc.text('Widoki tej samej konfiguracji. Kolory mają charakter poglądowy.', 16, 55);
     availableViews.slice(index, index + 2).forEach((wall, localIndex) => {
-      const image = input.views[wall];
-      if (!image) return;
-      const top = localIndex === 0 ? 38 : 158;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text(wallNames[wall], 14, top);
-      doc.addImage(image, 'JPEG', 14, top + 5, 182, 105, undefined, 'FAST');
+      const top = localIndex === 0 ? 65 : 170;
+      drawPdfCard(doc, 16, top, 178, 96, '#f8fafc');
+      layout.font(9.5, true);
+      doc.text(wallNames[wall], 22, top + 9);
+      drawPdfImage(doc, input.views[wall]!, 20, top + 14, 170, 78);
     });
   }
 
-  doc.addPage();
-  addHeader('Podsumowanie oferty');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.text('Uwagi', 14, 39);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
-  doc.text(safeText(input.customer.notes || 'Brak dodatkowych uwag.', 1200), 14, 48, { maxWidth: 125 });
-
-  if (input.customer.arUrl) {
-    const qrData = await QRCode.toDataURL(input.customer.arUrl, { width: 520, margin: 1, errorCorrectionLevel: 'M' });
-    doc.addImage(qrData, 'PNG', 148, 40, 45, 45);
-    doc.setFontSize(8);
-    doc.text('Model AR / konfiguracja', 170.5, 90, { align: 'center' });
+  layout.page('Uwagi i model AR');
+  layout.font(9, false, PDF_MUTED);
+  doc.text('Dodatkowe ustalenia i dostęp do modelu przypisanego do oferty.', 16, 55);
+  let arUrl = '';
+  try {
+    const url = new URL(input.customer.arUrl);
+    if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) arUrl = url.href;
+  } catch { /* Brak poprawnego adresu - nie tworzymy aktywnego odnośnika. */ }
+  const notesWidth = arUrl ? 104 : 162;
+  layout.font(9.5);
+  const notes: string[] = doc.splitTextToSize(safeText(input.customer.notes || 'Brak dodatkowych uwag.', 1200), notesWidth);
+  const noteHeight = Math.max(49, Math.min(notes.length, 31) * 4.5 + 24);
+  drawPdfCard(doc, 16, 65, arUrl ? 120 : 178, noteHeight);
+  layout.font(11, true);
+  doc.text('Uwagi do oferty', 24, 77);
+  layout.font(9.5);
+  doc.text(notes.slice(0, 31), 24, 88, { lineHeightFactor: 1.34 });
+  if (arUrl) {
+    const qrData = await QRCode.toDataURL(arUrl, { width: 440, margin: 3, errorCorrectionLevel: 'M', color: { dark: '#202938', light: '#ffffff' } });
+    drawPdfCard(doc, 144, 65, 50, 88);
+    doc.addImage(qrData, 'PNG', 149, 70, 40, 40);
+    layout.font(8.5, true);
+    doc.text('TWÓJ MODEL AR', 169, 118, { align: 'center' });
+    layout.font(7.5, false, PDF_MUTED);
+    doc.text('Zeskanuj telefonem, aby\nzobaczyć model garażu.', 169, 125, { align: 'center', lineHeightFactor: 1.35 });
+    doc.setFillColor(accent);
+    doc.roundedRect(150, 137, 38, 8, 1.5, 1.5, 'F');
+    layout.font(7.5, true, '#ffffff');
+    doc.text('OTWÓRZ MODEL ONLINE', 169, 142.5, { align: 'center' });
+    doc.link(150, 137, 38, 8, { url: arUrl });
   }
-
-  doc.setFillColor(245, 245, 245);
-  doc.roundedRect(14, 212, 182, 42, 3, 3, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('Wazne informacje', 21, 223);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.text([
+  let notesY = 65 + Math.max(noteHeight, arUrl ? 88 : 0) + 14;
+  if (notes.length > 31) {
+    layout.page('Uwagi - ciąg dalszy');
+    notesY = 61;
+    for (const line of notes.slice(31)) {
+      if (notesY + 5 > PDF_BOTTOM) { layout.page('Uwagi - ciąg dalszy'); notesY = 61; }
+      layout.font(9.5);
+      doc.text(line, 16, notesY);
+      notesY += 4.5;
+    }
+    notesY += 12;
+  }
+  if (notesY + 63 > PDF_BOTTOM) { layout.page('Ważne informacje'); notesY = 61; }
+  drawPdfCard(doc, 16, notesY, 178, 63, '#f8fafc');
+  layout.font(11, true);
+  doc.text('Ważne informacje', 24, notesY + 12);
+  const terms = [
     input.priceVerified
-      ? 'Cena zostala ponownie obliczona przez serwer WordPress na podstawie zapisanego cennika.'
-      : 'Cena w tym dokumencie jest kalkulacja orientacyjna i powinna zostac potwierdzona przez sprzedawce.',
-    'Kolory na ekranie moga roznic sie od rzeczywistych. Ostateczny odcien nalezy potwierdzic na probniku.',
-    'Zakres dostawy, montazu i przygotowania podloza okresla zatwierdzona umowa lub zamowienie.',
-  ], 21, 232, { maxWidth: 165, lineHeightFactor: 1.4 });
-
+      ? 'Cena została obliczona według aktualnego cennika. Zakres oferty odpowiada konfiguracji opisanej w dokumencie.'
+      : 'Cena ma charakter orientacyjny i wymaga potwierdzenia przez sprzedawcę.',
+    'Kolory na ekranie i wydruku mogą różnić się od rzeczywistych. Odcień należy potwierdzić na próbniku.',
+    'Zakres dostawy, montażu i przygotowania podłoża określa zatwierdzona umowa lub zamówienie.',
+    'Rysunki mają charakter poglądowy i nie zastępują dokumentacji wykonawczej.',
+  ];
+  let termsY = notesY + 21;
+  terms.forEach((term, index) => {
+    layout.font(8, true, accent);
+    doc.text(String(index + 1).padStart(2, '0'), 24, termsY);
+    layout.font(8.5, false, PDF_MUTED);
+    const lines: string[] = doc.splitTextToSize(term, 150);
+    doc.text(lines, 35, termsY, { lineHeightFactor: 1.35 });
+    termsY += lines.length * 4 + 3;
+  });
+  layout.footers();
   const safeNumber = safeText(input.offerNumber, 60).replace(/[^a-zA-Z0-9_-]+/g, '-');
   doc.save(`oferta-${safeNumber || Date.now()}.pdf`);
 }
