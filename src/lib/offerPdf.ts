@@ -81,17 +81,57 @@ function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: 
   doc.setFontSize(9);
   doc.text(`${config.width} cm`, x + width / 2, y - 7, { align: 'center' });
   doc.text(`${config.length} cm`, x - 8, y + length / 2, { angle: 90, align: 'center' });
+
+  const markOpening = (element: GarageElement) => {
+    const isHorizontalWall = element.wall === 'front' || element.wall === 'back';
+    const wallSize = isHorizontalWall ? config.width : config.length;
+    const start = Math.max(0, Math.min(wallSize, wallSize / 2 + element.x - element.width / 2));
+    const end = Math.max(start, Math.min(wallSize, start + element.width));
+    const code = element.type === 'gate' ? 'BR' : element.type === 'door' ? 'D' : element.type === 'pvc-window' ? 'OP' : element.type === 'window' ? 'O' : 'S';
+
+    doc.setDrawColor(234, 88, 12);
+    doc.setLineWidth(1.4);
+    doc.setFontSize(5.5);
+    doc.setTextColor(120, 53, 15);
+
+    if (element.wall === 'front') {
+      const x1 = x + start * ratio;
+      const x2 = x + end * ratio;
+      doc.line(x1, y + length, x2, y + length);
+      doc.text(code, (x1 + x2) / 2, y + length + 3, { align: 'center' });
+    } else if (element.wall === 'back') {
+      const x1 = x + start * ratio;
+      const x2 = x + end * ratio;
+      doc.line(x1, y, x2, y);
+      doc.text(code, (x1 + x2) / 2, y - 2, { align: 'center' });
+    } else if (element.wall === 'left') {
+      const y1 = y + start * ratio;
+      const y2 = y + end * ratio;
+      doc.line(x, y1, x, y2);
+      doc.text(code, x + 2, (y1 + y2) / 2);
+    } else {
+      const y1 = y + start * ratio;
+      const y2 = y + end * ratio;
+      doc.line(x + width, y1, x + width, y2);
+      doc.text(code, x + width - 2, (y1 + y2) / 2, { align: 'right' });
+    }
+  };
+
+  config.elements.forEach(markOpening);
+  doc.setTextColor(30, 30, 30);
+  doc.setLineWidth(0.2);
 }
 
 function drawElevationPlan(
   doc: import('jspdf').jsPDF,
   config: GarageConfig,
-  widthCm: number,
+  wall: WallFace,
   title: string,
   x: number,
   y: number,
   maxWidth: number,
 ) {
+  const widthCm = wall === 'front' || wall === 'back' ? config.width : config.length;
   const scale = Math.min(maxWidth / widthCm, 48 / config.height);
   const width = widthCm * scale;
   const wallHeight = config.height * scale;
@@ -103,13 +143,56 @@ function drawElevationPlan(
   doc.setDrawColor(35, 35, 35);
   doc.setLineWidth(0.5);
   doc.rect(x, y, width, wallHeight);
-  if (config.roofType === 'dual-slope') {
+  if (config.roofType === 'dual-slope' && (wall === 'front' || wall === 'back')) {
     doc.line(x, y, x + width / 2, y - roofRise);
     doc.line(x + width / 2, y - roofRise, x + width, y);
+  } else if (config.roofType === 'dual-slope') {
+    doc.line(x, y - 1.5, x + width, y - 1.5);
   } else {
-    doc.line(x, y - roofRise, x + width, y);
-    doc.line(x, y - roofRise, x, y);
+    const highOnLeft = (config.roofType === 'slope-right' && wall === 'front')
+      || (config.roofType === 'slope-left' && wall === 'back')
+      || (config.roofType === 'slope-front' && wall === 'left')
+      || (config.roofType === 'slope-back' && wall === 'right');
+    const slopesAcrossThisWall = ((wall === 'front' || wall === 'back') && (config.roofType === 'slope-left' || config.roofType === 'slope-right'))
+      || ((wall === 'left' || wall === 'right') && (config.roofType === 'slope-front' || config.roofType === 'slope-back'));
+    if (slopesAcrossThisWall) {
+      doc.line(x, highOnLeft ? y - roofRise : y, x + width, highOnLeft ? y : y - roofRise);
+    } else {
+      doc.line(x, y - 1.5, x + width, y - 1.5);
+    }
   }
+
+  const elementCodes: Record<GarageElement['type'], string> = {
+    gate: 'BR', door: 'D', window: 'O', 'pvc-window': 'OP', skylight: 'S',
+  };
+
+  config.elements.filter(element => element.wall === wall).forEach(element => {
+    const leftCm = Math.max(0, Math.min(widthCm - element.width, widthCm / 2 + element.x - element.width / 2));
+    const bottomCm = Math.max(0, element.y);
+    const boundedHeightCm = Math.max(0, Math.min(element.height, config.height - bottomCm));
+    if (boundedHeightCm === 0) return;
+    const elementX = x + leftCm * scale;
+    const elementY = y + wallHeight - (bottomCm + boundedHeightCm) * scale;
+    const elementWidth = Math.min(element.width, widthCm) * scale;
+    const elementHeight = boundedHeightCm * scale;
+    const code = elementCodes[element.type];
+
+    if (element.type === 'gate') doc.setFillColor(255, 237, 213);
+    else if (element.type === 'door') doc.setFillColor(254, 249, 195);
+    else doc.setFillColor(219, 234, 254);
+    doc.setDrawColor(194, 65, 12);
+    doc.setLineWidth(0.4);
+    doc.rect(elementX, elementY, elementWidth, elementHeight, 'FD');
+    doc.setTextColor(55, 55, 55);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.2);
+    doc.text(`${code} ${element.width}x${element.height}`, elementX + elementWidth / 2, elementY + Math.max(4, elementHeight / 2), { align: 'center', maxWidth: Math.max(9, elementWidth - 1) });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.2);
+    doc.text(`L:${Math.round(leftCm)} P:${Math.round(bottomCm)} cm`, elementX + elementWidth / 2, elementY + elementHeight + 3, { align: 'center' });
+  });
+
+  doc.setTextColor(30, 30, 30);
   doc.setLineWidth(0.2);
   doc.line(x, y + wallHeight + 5, x + width, y + wallHeight + 5);
   doc.line(x, y + wallHeight + 3, x, y + wallHeight + 7);
@@ -141,7 +224,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(17);
-    doc.text('STAL EURO - OFERTA GARAZU', 14, 11);
+    doc.text('GARDHOUSE - OFERTA GARAZU', 14, 11);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(safeText(subtitle), 14, 18);
@@ -199,11 +282,20 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   drawDimensionPlan(doc, input.config, 40, 54, 130);
   doc.setFontSize(10);
   doc.text(`Wysokosc scian: ${input.config.height} cm`, 14, 145);
-  drawElevationPlan(doc, input.config, input.config.width, 'Elewacja frontowa', 20, 188, 75);
-  drawElevationPlan(doc, input.config, input.config.length, 'Elewacja boczna', 115, 188, 75);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
+  doc.text('Pomarańczowe odcinki oznaczaja polozenie otworow. BR - brama, D - drzwi, O - okno, OP - okno PCV, S - swietlik.', 14, 156, { maxWidth: 182 });
   doc.text('Rysunki maja charakter pogladowy. Wymiary produkcyjne wymagaja zatwierdzenia technicznego.', 14, 267);
+
+  doc.addPage();
+  addHeader('Rysunki techniczne - wszystkie cztery sciany');
+  drawElevationPlan(doc, input.config, 'front', 'Elewacja frontowa', 17, 62, 78);
+  drawElevationPlan(doc, input.config, 'right', 'Elewacja prawa', 112, 62, 78);
+  drawElevationPlan(doc, input.config, 'back', 'Elewacja tylna', 17, 177, 78);
+  drawElevationPlan(doc, input.config, 'left', 'Elewacja lewa', 112, 177, 78);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text('Oznaczenia: BR - brama, D - drzwi, O - okno, OP - okno PCV, S - swietlik. L - odleglosc od lewej krawedzi sciany, P - od posadzki.', 14, 279, { maxWidth: 182 });
 
   const orderedWalls: WallFace[] = ['front', 'right', 'back', 'left'];
   const availableViews = orderedWalls.filter(wall => Boolean(input.views[wall]));

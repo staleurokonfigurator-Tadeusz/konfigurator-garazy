@@ -9,7 +9,7 @@ export default function AdminPage() {
         <div className="mb-7 flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-600">
           <FileText size={28} />
         </div>
-        <p className="mb-2 text-xs font-black uppercase tracking-[0.25em] text-orange-500">Stal Euro</p>
+        <p className="mb-2 text-xs font-black uppercase tracking-[0.25em] text-orange-500">Gardhouse</p>
         <h1 className="text-3xl font-black tracking-tight md:text-4xl">Panel ofert działa w WordPressie</h1>
         <p className="mt-5 leading-7 text-zinc-300">
           Dostęp do konfiguracji klientów i tworzenia ofert wymaga uwierzytelnionej sesji WordPress.

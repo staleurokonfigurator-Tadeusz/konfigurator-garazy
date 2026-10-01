@@ -25,20 +25,43 @@ const CarportCanvasArea = dynamic(() => import('@/components/CarportCanvasArea')
 const PergolaCanvasArea = dynamic(() => import('@/components/PergolaCanvasArea'), { ssr: false, loading: LoadingFallback });
 const TrashCanvasArea = dynamic(() => import('@/components/TrashCanvasArea'), { ssr: false, loading: LoadingFallback });
 
+const DEFAULT_RAL_9006_ID = 'ral-9006';
+
+const findRal9006Id = (colors: Array<{ id?: string; label?: string }> = []) => {
+  const ral9006 = colors.find(color => `${color.id || ''} ${color.label || ''}`.toLowerCase().includes('9006'));
+  return ral9006?.id || DEFAULT_RAL_9006_ID;
+};
+
+const applyDefaultRal9006 = (config: GarageConfig, colorId: string): GarageConfig => ({
+  ...config,
+  wallColor: colorId,
+  roofColor: colorId,
+  gateColor: colorId,
+  doorColor: colorId,
+  windowColor: colorId,
+  cornerFlashingColor: colorId,
+  roofFlashingColor: colorId,
+  gutterColor: colorId,
+  carportBaseColor: colorId,
+  carportInsertColor: colorId,
+});
+
 const INITIAL_CONFIG: GarageConfig = {
   width: 300, length: 500, height: 210,
   roofType: 'dual-slope', gutters: false,
   elements: [{ id: uuidv4(), type: 'gate', wall: 'front', x: 0, y: 0, width: 250, height: 200, clearanceHeight: 190, gateType: 'up-and-over', hingeSide: 'left', profile: 'pionowe-t7' }],
   applyColorToAll: false,
   removeFoil: false,
-  roofColor: '#3b3b3c', roofProfile: 'pionowe-t14',
-  wallColor: '#e3e3e3', wallProfile: 'pionowe-t7',
-  gateColor: '#3b3b3c', gateProfile: 'pionowe-t7',
-  doorColor: '#3b3b3c', doorProfile: 'pionowe-t7',
-  cornerFlashingColor: '#3b3b3c',
-  roofFlashingColor: '#3b3b3c',
-  gutterColor: '#3b3b3c',
-  windowColor: '#ffffff',
+  roofColor: DEFAULT_RAL_9006_ID, roofProfile: 'pionowe-t7',
+  wallColor: DEFAULT_RAL_9006_ID, wallProfile: 'pionowe-t7',
+  gateColor: DEFAULT_RAL_9006_ID, gateProfile: 'pionowe-t7',
+  doorColor: DEFAULT_RAL_9006_ID, doorProfile: 'pionowe-t7',
+  cornerFlashingColor: DEFAULT_RAL_9006_ID,
+  roofFlashingColor: DEFAULT_RAL_9006_ID,
+  gutterColor: DEFAULT_RAL_9006_ID,
+  windowColor: DEFAULT_RAL_9006_ID,
+  carportBaseColor: DEFAULT_RAL_9006_ID,
+  carportInsertColor: DEFAULT_RAL_9006_ID,
 };
 
 const FALLBACK_DATA = {
@@ -95,7 +118,15 @@ export default function Home() {
         const decodedJson = decodeURIComponent(escape(window.atob(decodeURIComponent(initDataRaw))));
         const payload = JSON.parse(decodedJson);
         setAppData(payload);
-        if (!savedConfigBase64) setConfig(prev => ({ ...prev, width: payload.baseConfig.w, length: payload.baseConfig.l, height: payload.baseConfig.h }));
+        if (!savedConfigBase64) {
+          const ral9006Id = findRal9006Id(payload.colors);
+          setConfig(prev => applyDefaultRal9006({
+            ...prev,
+            width: payload.baseConfig.w,
+            length: payload.baseConfig.l,
+            height: payload.baseConfig.h,
+          }, ral9006Id));
+        }
       } catch (e: any) { setAppData(FALLBACK_DATA); }
     } else if (!savedConfigBase64) {
       setAppData(FALLBACK_DATA);

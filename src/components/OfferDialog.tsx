@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { FileDown, ShieldCheck, X } from 'lucide-react';
+import { FileDown, X } from 'lucide-react';
 import type { GarageConfig, WallFace } from '@/types';
 import { generateOfferPdf, type OfferCustomer } from '@/lib/offerPdf';
 import { createOfferInWordPress } from '@/lib/wordpressBridge';
@@ -47,8 +47,8 @@ export default function OfferDialog({ config, estimatedPrice, colors, selectedWa
 
   const handleGenerate = async () => {
     setError('');
-    if (!customer.name.trim() && !customer.company.trim()) {
-      setError('Podaj nazwę klienta albo firmy.');
+    if (!customer.name.trim()) {
+      setError('Podaj imię i nazwisko klienta lub osoby kontaktowej.');
       return;
     }
     if (customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) {
@@ -101,7 +101,7 @@ export default function OfferDialog({ config, estimatedPrice, colors, selectedWa
           <label className="text-sm font-bold">Klient / osoba kontaktowa
             <input maxLength={120} value={customer.name} onChange={event => updateCustomer('name', event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-300 px-4 py-3 font-normal outline-none focus:border-orange-500" />
           </label>
-          <label className="text-sm font-bold">Firma
+          <label className="text-sm font-bold">Firma (opcjonalnie)
             <input maxLength={120} value={customer.company} onChange={event => updateCustomer('company', event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-300 px-4 py-3 font-normal outline-none focus:border-orange-500" />
           </label>
           <label className="text-sm font-bold">E-mail
@@ -121,11 +121,6 @@ export default function OfferDialog({ config, estimatedPrice, colors, selectedWa
           <label className="text-sm font-bold md:col-span-2">Uwagi do oferty
             <textarea maxLength={1200} rows={4} value={customer.notes} onChange={event => updateCustomer('notes', event.target.value)} className="mt-2 w-full resize-y rounded-xl border border-zinc-300 px-4 py-3 font-normal outline-none focus:border-orange-500" />
           </label>
-        </div>
-
-        <div className="mx-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-          <ShieldCheck className="mt-0.5 shrink-0" size={20} />
-          <p>Dane klienta nie są wysyłane do Vercel. WordPress zapisuje ofertę, ponownie oblicza cenę z cennika serwerowego i zwraca trwały adres modelu do kodu QR.</p>
         </div>
 
         {error && <p className="mx-6 mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</p>}

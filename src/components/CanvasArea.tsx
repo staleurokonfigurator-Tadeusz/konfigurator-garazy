@@ -25,26 +25,28 @@ function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFa
     const l = config.length * 0.01; 
     const h = config.height * 0.01;
     
-    let groupOffsetX = 0;
+    let sceneCenterX = 0;
+    let sceneWidth = w;
     if (config.hasCarport && config.carportWidth) {
       const cw_m = config.carportWidth * 0.01;
-      if (config.carportSide === 'right') groupOffsetX = -cw_m / 2;
-      else if (config.carportSide === 'left') groupOffsetX = cw_m / 2;
+      sceneWidth += cw_m;
+      if (config.carportSide === 'right') sceneCenterX = cw_m / 2;
+      else if (config.carportSide === 'left') sceneCenterX = -cw_m / 2;
     }
 
-    let targetX = groupOffsetX; 
-    let targetZ = 0; 
-    let camX = groupOffsetX; 
+    let targetX = sceneCenterX;
+    let targetZ = 0;
+    let camX = sceneCenterX;
     let camZ = 0;
     
-    const dist = Math.max(w, l) + 4;
+    const dist = Math.max(sceneWidth, l) + 4;
     const zoomMultiplier = activeDimId ? 0.45 : 1; 
 
     switch (selectedWall) {
       case 'front': targetZ = l / 2; camZ = l / 2 + dist * zoomMultiplier; break;
       case 'back': targetZ = -l / 2; camZ = -l / 2 - dist * zoomMultiplier; break;
-      case 'left': targetX = -w / 2 + groupOffsetX; camX = -w / 2 - dist * zoomMultiplier + groupOffsetX; break;
-      case 'right': targetX = w / 2 + groupOffsetX; camX = w / 2 + dist * zoomMultiplier + groupOffsetX; break;
+      case 'left': targetX = -w / 2; camX = -w / 2 - dist * zoomMultiplier; break;
+      case 'right': targetX = w / 2; camX = w / 2 + dist * zoomMultiplier; break;
     }
     controlsRef.current.setLookAt(camX, h / 2, camZ, targetX, h / 2, targetZ, true);
   }, [selectedWall, config.width, config.length, config.height, activeDimId, config.hasCarport, config.carportWidth, config.carportSide]);
@@ -75,13 +77,6 @@ function DimensionsOverlay({ config, activeId }: { config: GarageConfig, activeI
   const wallW = (el.wall === 'front' || el.wall === 'back') ? w : l;
   const elW = el.width / 100; const elH = el.height / 100; const elX = el.x / 100; const elY = el.y / 100;
 
-  let groupOffsetX = 0;
-  if (config.hasCarport && config.carportWidth) {
-    const cw = config.carportWidth / 100;
-    if (config.carportSide === 'right') groupOffsetX = -cw / 2;
-    else if (config.carportSide === 'left') groupOffsetX = cw / 2;
-  }
-
   const gapLeft = (elX - elW / 2) - (-wallW / 2);
   const gapRight = (wallW / 2) - (elX + elW / 2);
   const gapBottom = elY;
@@ -91,10 +86,10 @@ function DimensionsOverlay({ config, activeId }: { config: GarageConfig, activeI
   let rot: [number, number, number] = [0, 0, 0];
 
   const offset = 0.05; 
-  if (el.wall === 'front') { pos = [elX + groupOffsetX, elY + elH/2, l/2 + offset]; }
-  else if (el.wall === 'back') { pos = [-elX + groupOffsetX, elY + elH/2, -l/2 - offset]; rot = [0, Math.PI, 0]; }
-  else if (el.wall === 'left') { pos = [-w/2 - offset + groupOffsetX, elY + elH/2, elX]; rot = [0, -Math.PI/2, 0]; }
-  else if (el.wall === 'right') { pos = [w/2 + offset + groupOffsetX, elY + elH/2, -elX]; rot = [0, Math.PI/2, 0]; }
+  if (el.wall === 'front') { pos = [elX, elY + elH/2, l/2 + offset]; }
+  else if (el.wall === 'back') { pos = [-elX, elY + elH/2, -l/2 - offset]; rot = [0, Math.PI, 0]; }
+  else if (el.wall === 'left') { pos = [-w/2 - offset, elY + elH/2, elX]; rot = [0, -Math.PI/2, 0]; }
+  else if (el.wall === 'right') { pos = [w/2 + offset, elY + elH/2, -elX]; rot = [0, Math.PI/2, 0]; }
 
   // ODWROTNY FORMAT WYMIARÓW DLA ARCHITEKTURY
   const labelText = `${el.height} x ${el.width} cm`;
