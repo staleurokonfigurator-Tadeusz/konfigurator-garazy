@@ -106,8 +106,9 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     const area = (config.width / 100) * (config.length / 100);
     totalBase += area * baseM2Price;
 
-    if (config.hasCarport && config.carportWidth) {
-      const carportArea = (config.carportWidth / 100) * (config.length / 100);
+    if (config.hasCarport) {
+      const carportWidth = config.carportWidth || 300;
+      const carportArea = (carportWidth / 100) * (config.length / 100);
       totalBase += carportArea * safeNum(pricing.integrated_carport_m2_v);
     }
 
@@ -411,7 +412,21 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         <div className="space-y-4">
           <label className={`flex items-center justify-between p-3 rounded-lg border border-zinc-200 hover:bg-zinc-50 transition-colors bg-white shadow-sm ${isReadOnly ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}>
             <span className="text-sm font-semibold text-zinc-700">Dodaj wiatę do garażu</span>
-            <input type="checkbox" disabled={isReadOnly} checked={config.hasCarport || false} onChange={(e) => updateConfig('hasCarport', e.target.checked)} className="w-5 h-5 rounded text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
+            <input
+              type="checkbox"
+              disabled={isReadOnly}
+              checked={config.hasCarport || false}
+              onChange={(event) => {
+                const enabled = event.target.checked;
+                setConfig(previous => ({
+                  ...previous,
+                  hasCarport: enabled,
+                  carportWidth: enabled ? (previous.carportWidth || 300) : previous.carportWidth,
+                  carportSide: enabled ? (previous.carportSide || 'right') : previous.carportSide,
+                }));
+              }}
+              className="w-5 h-5 rounded text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50"
+            />
           </label>
 
           {config.hasCarport && (
@@ -974,3 +989,4 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     </div>
   );
 }
+
