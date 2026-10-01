@@ -53,23 +53,88 @@ function createProfileBumpTexture(profile: SheetProfile) {
   return texture;
 }
 
+type RoofSlopeAxis = 'x' | 'z';
+
+function createRoofTileReliefGeometry(width: number, depth: number, slopeAxis: RoofSlopeAxis) {
+  const widthSegments = Math.min(96, Math.max(28, Math.round(width / 0.07)));
+  const depthSegments = Math.min(96, Math.max(28, Math.round(depth / 0.07)));
+  const geometry = new THREE.PlaneGeometry(width, depth, widthSegments, depthSegments);
+  geometry.rotateX(-Math.PI / 2);
+
+  const positions = geometry.attributes.position as THREE.BufferAttribute;
+  for (let index = 0; index < positions.count; index += 1) {
+    const x = positions.getX(index);
+    const z = positions.getZ(index);
+    const alongSlope = slopeAxis === 'x' ? x : z;
+    const acrossSlope = slopeAxis === 'x' ? z : x;
+
+    // Wyraźny profil fali biegnący od kalenicy do okapu oraz poprzeczny
+    // uskok każdego rzędu dachówki. To rzeczywista geometria, nie płaski obraz.
+    const channelPhase = (acrossSlope / 0.36) * Math.PI * 2;
+    const channel = Math.pow((Math.cos(channelPhase) + 1) / 2, 7) * 0.045;
+    const tileWave = (Math.sin(channelPhase * 2) + 1) * 0.004;
+    const rowPeriod = 0.34;
+    const rowPhase = ((alongSlope % rowPeriod) + rowPeriod) % rowPeriod;
+    const rowLip = rowPhase < 0.055 ? (1 - rowPhase / 0.055) * 0.028 : 0;
+    positions.setY(index, channel + tileWave + rowLip);
+  }
+
+  positions.needsUpdate = true;
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function RoofTileRelief({
+  width,
+  depth,
+  slopeAxis,
+  position,
+  color,
+  texture,
+}: {
+  width: number;
+  depth: number;
+  slopeAxis: RoofSlopeAxis;
+  position: [number, number, number];
+  color: string;
+  texture: THREE.Texture;
+}) {
+  const geometry = useMemo(() => createRoofTileReliefGeometry(width, depth, slopeAxis), [width, depth, slopeAxis]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return (
+    <mesh position={position} geometry={geometry} castShadow receiveShadow>
+      <meshStandardMaterial
+        key={`roof-tile-${color}`}
+        map={texture}
+        color={color}
+        roughness={0.42}
+        metalness={0.38}
+        envMapIntensity={0.95}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
+
 function resolveColor(colorId: string | undefined, colors: any[] = []): { hex: string; isWood: boolean; textureUrl: string } {
-  if (!colorId) return { hex: '#d4d4d4', isWood: false, textureUrl: '' };
-  if (colorId.startsWith('#')) return { hex: colorId, isWood: false, textureUrl: '' };
-  const found = (colors || []).find((c: any) => c.id === colorId);
+  const normalizedId = String(colorId || '');
+  if (!normalizedId) return { hex: '#d4d4d4', isWood: false, textureUrl: '' };
+  if (normalizedId.startsWith('#')) return { hex: normalizedId, isWood: false, textureUrl: '' };
+  const found = (colors || []).find((c: any) => String(c.id) === normalizedId);
   if (!found) return { hex: '#d4d4d4', isWood: false, textureUrl: '' };
 
   const hasTexture = Boolean(found.texture && found.texture.trim() !== '');
   const isWoodType = found.type ? found.type.toLowerCase().includes('drewn') : false;
-  const colorSignature = `${found.id || ''} ${found.label || ''}`.toLowerCase();
+  const colorSignature = `${found.id || ''} ${found.label || ''}`.toLocaleLowerCase('pl-PL');
   let textureUrl = found.texture || '';
 
   // Najpopularniejsze dekory są utrzymywane razem z aplikacją. Dzięki temu
   // model, eksport GLB i PDF nie zależą od CORS ani od chwilowej dostępności
   // zewnętrznego hostingu mediów WordPressa.
-  if (/z[lł]ot|golden|d[aą]b|oak/.test(colorSignature)) {
+  if (normalizedId === 'zloty-dab' || /z[lł]ot|golden|d[aą]b|oak/.test(colorSignature)) {
     textureUrl = GOLDEN_OAK_TEXTURE;
-  } else if (/orzech|walnut/.test(colorSignature)) {
+  } else if (normalizedId === 'ciemny-orzech' || /orzech|walnut/.test(colorSignature)) {
     textureUrl = DARK_WALNUT_TEXTURE;
   }
 
@@ -127,7 +192,7 @@ function SectionalGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHo
         <group key={i} position={[0, i * panelH + panelH / 2, 0]}>
           <mesh castShadow receiveShadow>
             <boxGeometry args={[elW - 0.02, panelH - 0.005, thick]} />
-            <meshStandardMaterial map={activeColorMap} normalMap={activeNormalMap} normalScale={isWood ? new THREE.Vector2(0.38, 0.38) : undefined} bumpMap={profileMap} bumpScale={0.09} color={isWood ? '#ffffff' : gateHex} roughness={isWood ? 0.62 : 0.48} metalness={isWood ? 0.05 : 0.28} envMapIntensity={0.85} />
+            <meshStandardMaterial key={`sectional-${config.gateColor}-${gateProfile}`} map={activeColorMap} normalMap={activeNormalMap} normalScale={isWood ? new THREE.Vector2(0.38, 0.38) : undefined} bumpMap={profileMap} bumpScale={0.09} color={isWood ? '#ffffff' : gateHex} roughness={isWood ? 0.62 : 0.48} metalness={isWood ? 0.05 : 0.28} envMapIntensity={0.85} />
           </mesh>
         </group>
       ))}
@@ -160,7 +225,7 @@ function AnimatedGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHor
   const activeNormalMap = isWood ? (isHorizontal ? woodNormalHoriz : woodNormal) : undefined;
   const profileMap = profileTextures[gateProfile] || profileTextures['pionowe-t7'];
 
-  const gateMatComponent = <meshStandardMaterial map={activeColorMap} normalMap={activeNormalMap} normalScale={isWood ? new THREE.Vector2(0.38, 0.38) : undefined} bumpMap={profileMap} bumpScale={0.12} color={isWood ? '#ffffff' : gateHex} roughness={isWood ? 0.62 : 0.48} metalness={isWood ? 0.05 : 0.28} envMapIntensity={0.85} />;
+  const gateMatComponent = <meshStandardMaterial key={`gate-${config.gateColor}-${gateProfile}`} map={activeColorMap} normalMap={activeNormalMap} normalScale={isWood ? new THREE.Vector2(0.38, 0.38) : undefined} bumpMap={profileMap} bumpScale={0.12} color={isWood ? '#ffffff' : gateHex} roughness={isWood ? 0.62 : 0.48} metalness={isWood ? 0.05 : 0.28} envMapIntensity={0.85} />;
   const isLeftHinged = el.hingeSide === 'left';
   const handleXOffset = isLeftHinged ? (elW / 2 - 0.1) : -(elW / 2 - 0.1);
 
@@ -256,10 +321,10 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
   const isRoofTile = (config.extraOptions || []).includes('roofTile');
 
   const { woodColor, woodColorHoriz, walnutColor, walnutColorHoriz, woodNormal, woodNormalHoriz, roofTileTexture } = useMemo(() => {
-    const prepareClone = (source: THREE.Texture, rotate = false) => {
+    const prepareClone = (source: THREE.Texture, rotate = false, repeat = 1.35) => {
       const texture = source.clone();
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.set(2.2, 2.2);
+      texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
+      texture.repeat.set(repeat, repeat);
       texture.center.set(0.5, 0.5);
       texture.rotation = rotate ? Math.PI / 2 : 0;
       texture.needsUpdate = true;
@@ -274,9 +339,9 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     verticalWalnut.colorSpace = THREE.SRGBColorSpace;
     const horizontalWalnut = prepareClone(walnutWoodSource, true);
     horizontalWalnut.colorSpace = THREE.SRGBColorSpace;
-    const verticalNormal = prepareClone(woodNormalSource);
+    const verticalNormal = prepareClone(woodNormalSource, false, 2.2);
     verticalNormal.colorSpace = THREE.NoColorSpace;
-    const horizontalNormal = prepareClone(woodNormalSource, true);
+    const horizontalNormal = prepareClone(woodNormalSource, true, 2.2);
     horizontalNormal.colorSpace = THREE.NoColorSpace;
     const roofTile = roofTileSource.clone();
     roofTile.wrapS = roofTile.wrapT = THREE.MirroredRepeatWrapping;
@@ -414,7 +479,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
 
             return (
               <group key={el.id} position={[xPos, elY + elH / 2, t / 2]}>
-                <mesh castShadow receiveShadow><boxGeometry args={[elW - 0.02, elH - 0.02, t + 0.01]} /><meshStandardMaterial map={activeColorMap} normalMap={activeNormalMap} normalScale={isDoorWood ? new THREE.Vector2(0.38, 0.38) : undefined} bumpMap={doorProfileMap} bumpScale={0.11} color={isDoorWood ? '#ffffff' : doorHex} roughness={isDoorWood ? 0.62 : 0.48} metalness={isDoorWood ? 0.05 : 0.28} envMapIntensity={0.85} /></mesh>
+                <mesh castShadow receiveShadow><boxGeometry args={[elW - 0.02, elH - 0.02, t + 0.01]} /><meshStandardMaterial key={`door-${config.doorColor}-${config.doorProfile}`} map={activeColorMap} normalMap={activeNormalMap} normalScale={isDoorWood ? new THREE.Vector2(0.38, 0.38) : undefined} bumpMap={doorProfileMap} bumpScale={0.11} color={isDoorWood ? '#ffffff' : doorHex} roughness={isDoorWood ? 0.62 : 0.48} metalness={isDoorWood ? 0.05 : 0.28} envMapIntensity={0.85} /></mesh>
                 <group position={[handleXOffset, 0, t / 2 + 0.025]}><mesh><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color="#333" roughness={0.5} metalness={0.8} /></mesh><mesh position={[0, -0.05, 0]}><cylinderGeometry args={[0.012, 0.012, 0.1, 8]} /><meshStandardMaterial color="#333" roughness={0.5} /></mesh></group>
                 <mesh position={[hingeXOffset, elH / 3, t / 2 + 0.01]}><boxGeometry args={[0.02, 0.08, 0.02]} /><meshStandardMaterial color="#333" /></mesh>
                 <mesh position={[hingeXOffset, -elH / 3, t / 2 + 0.01]}><boxGeometry args={[0.02, 0.08, 0.02]} /><meshStandardMaterial color="#333" /></mesh>
@@ -443,7 +508,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
 
     const renderFasciaMat = (attachName: string) => <meshStandardMaterial attach={attachName} color={isFasciaWood ? '#ffffff' : fasciaHex} map={isFasciaWood && baseFasciaWood ? baseFasciaWood : undefined} roughness={0.8} metalness={0.2} visible={!!showRoofFlashings} side={THREE.DoubleSide} />;
     const roofProfileMap = profileTextures[config.roofProfile] || profileTextures['pionowe-t7'];
-    const renderMainRoofMat = (attachName: string) => <meshStandardMaterial attach={attachName} color={isRoofWood ? '#ffffff' : roofHex} map={roofTexToUse} normalMap={isRoofWood ? woodNormal : undefined} normalScale={isRoofWood ? new THREE.Vector2(0.38, 0.38) : undefined} bumpMap={isRoofTile ? roofTileTexture : roofProfileMap} bumpScale={isRoofTile ? 0.1 : 0.08} roughness={isRoofWood ? 0.62 : 0.48} metalness={isRoofWood ? 0.05 : 0.28} envMapIntensity={0.85} side={THREE.DoubleSide} />;
+    const renderMainRoofMat = (attachName: string) => <meshStandardMaterial key={`roof-${config.roofColor}-${config.roofProfile}-${isRoofTile}`} attach={attachName} color={isRoofWood ? '#ffffff' : roofHex} map={isRoofTile ? undefined : roofTexToUse} normalMap={isRoofWood && !isRoofTile ? woodNormal : undefined} normalScale={isRoofWood && !isRoofTile ? new THREE.Vector2(0.38, 0.38) : undefined} bumpMap={isRoofTile ? undefined : roofProfileMap} bumpScale={0.08} roughness={isRoofWood ? 0.62 : 0.48} metalness={isRoofWood ? 0.05 : 0.28} envMapIntensity={0.85} side={THREE.DoubleSide} />;
 
     const gutterR = 0.035; const pipeR = 0.025;
     
@@ -469,12 +534,14 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
               <boxGeometry args={[paneLen, t, rL]} />
               {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{renderFasciaMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
             </mesh>
+            {isRoofTile && <RoofTileRelief width={paneLen} depth={rL} slopeAxis="x" position={[-(paneLen/2 - overlap/2), t/2 + 0.002, 0]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofTileTexture} />}
           </group>
           <group rotation={[0, 0, -roofTheta]}>
             <mesh position={[(paneLen/2 - overlap/2), 0, 0]} castShadow receiveShadow>
               <boxGeometry args={[paneLen, t, rL]} />
               {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{renderFasciaMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
             </mesh>
+            {isRoofTile && <RoofTileRelief width={paneLen} depth={rL} slopeAxis="x" position={[(paneLen/2 - overlap/2), t/2 + 0.002, 0]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofTileTexture} />}
           </group>
           {showGutters && (
             <>
@@ -521,6 +588,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
             <boxGeometry args={[paneLenX, t, paneLenZ]} />
             {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{renderFasciaMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
           </mesh>
+          {isRoofTile && <RoofTileRelief width={paneLenX} depth={paneLenZ} slopeAxis={isFront || isBack ? 'z' : 'x'} position={[xShift, t/2 + 0.002, zShift]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofTileTexture} />}
         </group>
         {showGutters && <group position={[centerX, 0, 0]}>{gutterSystem}</group>}
       </group>
@@ -535,7 +603,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
   const activeWallNormalMap = isWallWood ? (isWallHorizontal ? woodNormalHoriz : woodNormal) : undefined;
   const wallProfileMap = profileTextures[config.wallProfile] || profileTextures['pionowe-t7'];
   
-  const wallMaterialComponent = <meshStandardMaterial map={activeWallColorMap} normalMap={activeWallNormalMap} normalScale={isWallWood ? new THREE.Vector2(0.38, 0.38) : undefined} bumpMap={wallProfileMap} bumpScale={0.12} color={isWallWood ? '#ffffff' : wallHex} roughness={isWallWood ? 0.62 : 0.48} metalness={isWallWood ? 0.05 : 0.28} envMapIntensity={0.85} side={THREE.DoubleSide} />;
+  const wallMaterialComponent = <meshStandardMaterial key={`wall-${config.wallColor}-${config.wallProfile}`} map={activeWallColorMap} normalMap={activeWallNormalMap} normalScale={isWallWood ? new THREE.Vector2(0.38, 0.38) : undefined} bumpMap={wallProfileMap} bumpScale={0.12} color={isWallWood ? '#ffffff' : wallHex} roughness={isWallWood ? 0.62 : 0.48} metalness={isWallWood ? 0.05 : 0.28} envMapIntensity={0.85} side={THREE.DoubleSide} />;
 
   const { carportBaseMaterial, carportInsertMaterial } = useMemo(() => {
     const baseResult = resolveColor(config.carportBaseColor || '#333333', colors);

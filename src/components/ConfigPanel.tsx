@@ -335,21 +335,21 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
   };
 
   const InlineColorSelector = () => (
-    <div className="p-4 bg-zinc-950 border-t border-zinc-800 shadow-inner animate-in slide-in-from-top-2 duration-200">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+    <div className="border-t border-zinc-800 bg-zinc-950 p-4 shadow-inner animate-in slide-in-from-top-2 duration-200">
+      <div className="space-y-5">
         {Object.entries(groupedColors).map(([groupName, colors]) => (
-          <div key={groupName} className="mb-2">
-            <h5 className="font-bold text-xs mb-3 capitalize text-zinc-400 tracking-wider border-b border-zinc-800 pb-1">{groupName}:</h5>
-            <div className="grid grid-cols-2 lg:grid-cols-2 gap-2">
+          <div key={groupName}>
+            <h5 className="mb-2 border-b border-zinc-800 pb-2 text-[11px] font-black uppercase tracking-[0.16em] text-zinc-400">{groupName}</h5>
+            <div className="grid grid-cols-2 gap-2">
               {colors.map((c: any) => (
-                <button key={c.id} onClick={() => handleColorSelect(c.id)} className="w-full flex items-center gap-3 p-2 hover:bg-zinc-800 rounded-lg transition-colors border border-zinc-800 hover:border-[var(--theme)]">
+                <button key={c.id} onClick={() => handleColorSelect(c.id)} className="flex min-h-[58px] min-w-0 items-center gap-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-2.5 text-left transition-all hover:border-[var(--theme)] hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-[var(--theme)]/40">
                   {c.texture ? (
-                    <div className="w-6 h-6 rounded border border-zinc-600 shadow-sm bg-cover bg-center shrink-0" style={{backgroundImage: `url(${c.texture})`}}></div>
+                    <div className="h-9 w-9 shrink-0 rounded-lg border border-zinc-600 bg-cover bg-center shadow-sm" style={{backgroundImage: `url(${c.texture})`}}></div>
                   ) : (
-                    <div className="w-6 h-6 rounded border border-zinc-600 shadow-sm shrink-0" style={{backgroundColor: c.hex}}></div>
+                    <div className="h-9 w-9 shrink-0 rounded-lg border border-zinc-600 shadow-sm" style={{backgroundColor: c.hex}}></div>
                   )}
-                  <span className="text-xs font-medium text-left text-zinc-300">
-                    {c.label} {safeNum(c.price) > 0 ? <span className="text-[var(--theme)] font-bold block mt-0.5">(+{c.price}zł)</span> : ''}
+                  <span className="min-w-0 flex-1 break-words text-[11px] font-bold leading-snug text-zinc-200">
+                    {c.label} {safeNum(c.price) > 0 ? <span className="mt-1 block font-black text-[var(--theme)]">+{c.price} zł</span> : ''}
                   </span>
                 </button>
               ))}
@@ -863,26 +863,25 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
               
               return (
                 <React.Fragment key={item.key}>
-                  <div className={`flex items-center justify-between p-3 rounded-lg transition-colors ${isEditingThis ? 'bg-zinc-800' : 'hover:bg-zinc-800'}`}>
-                    <span className="text-sm font-medium text-zinc-300">{item.label}:</span>
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-2">
+                  <div className={`grid grid-cols-[minmax(0,1fr)_minmax(0,140px)_36px] items-center gap-3 rounded-lg p-3 transition-colors ${isEditingThis ? 'bg-zinc-800' : 'hover:bg-zinc-800'}`}>
+                    <span className="text-sm font-medium leading-tight text-zinc-300">{item.label}:</span>
+                    <div className="flex min-w-0 items-center gap-2">
                         {colorData.texture ? (
-                          <div className="w-8 h-8 rounded bg-cover bg-center border border-zinc-600 shadow-md" style={{backgroundImage: `url(${colorData.texture})`}}></div>
+                          <div className="h-8 w-8 shrink-0 rounded-lg border border-zinc-600 bg-cover bg-center shadow-md" style={{backgroundImage: `url(${colorData.texture})`}}></div>
                         ) : (
-                          <div className="w-8 h-8 rounded border border-zinc-600 shadow-md" style={{backgroundColor: colorData.hex}}></div>
+                          <div className="h-8 w-8 shrink-0 rounded-lg border border-zinc-600 shadow-md" style={{backgroundColor: colorData.hex}}></div>
                         )}
-                        <span className="text-xs font-bold w-24 leading-tight">{colorData.label}</span>
-                      </div>
-                      {!isReadOnly && (
+                        <span className="min-w-0 break-words text-xs font-bold leading-tight">{colorData.label}</span>
+                    </div>
+                    {!isReadOnly ? (
                         <button 
                           onClick={() => setActiveColorEdit(isEditingThis ? null : item.key)}
-                          className={`p-2 rounded bg-zinc-800 border transition-colors ${isEditingThis ? 'border-[var(--theme)] text-[var(--theme)]' : 'border-zinc-700 hover:border-zinc-500'}`}
+                          aria-label={`Zmień: ${item.label}`}
+                          className={`grid h-9 w-9 place-items-center rounded-lg border bg-zinc-800 transition-colors ${isEditingThis ? 'border-[var(--theme)] text-[var(--theme)]' : 'border-zinc-700 hover:border-zinc-500'}`}
                         >
                           <Edit2 size={14} />
                         </button>
-                      )}
-                    </div>
+                    ) : <span />}
                   </div>
                   {isEditingThis && !isReadOnly && <InlineColorSelector />}
                 </React.Fragment>

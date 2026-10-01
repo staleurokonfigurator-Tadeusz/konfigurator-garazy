@@ -172,10 +172,13 @@ function drawElevationPlan(
   const carportX = config.carportSide === 'left' ? x : garageX + garageWidth;
   const wallHeight = config.height * scale;
   const roofRise = config.roofType === 'dual-slope' ? Math.min(16, width * 0.16) : Math.min(10, width * 0.1);
+  const slopesAcrossThisWall = ((wall === 'front' || wall === 'back') && (config.roofType === 'slope-left' || config.roofType === 'slope-right'))
+    || ((wall === 'left' || wall === 'right') && (config.roofType === 'slope-front' || config.roofType === 'slope-back'));
+  const visibleRoofRise = (config.roofType === 'dual-slope' && isFrontBack) || slopesAcrossThisWall ? roofRise : 1.5;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text(title, x, y - 7);
+  doc.text(title, x, y - visibleRoofRise - 6);
   doc.setDrawColor(35, 35, 35);
   doc.setLineWidth(0.5);
   doc.rect(garageX, y, garageWidth, wallHeight);
@@ -200,7 +203,7 @@ function drawElevationPlan(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.5);
     doc.setTextColor(71, 85, 105);
-    doc.text('WIATA - WIDOK BOCZNY', x + width / 2, y + 6, { align: 'center' });
+    doc.text('WIATA', x + width / 2, y + 6, { align: 'center' });
   }
   doc.setTextColor(30, 30, 30);
   doc.setDrawColor(35, 35, 35);
@@ -215,8 +218,6 @@ function drawElevationPlan(
       || (config.roofType === 'slope-left' && wall === 'back')
       || (config.roofType === 'slope-front' && wall === 'left')
       || (config.roofType === 'slope-back' && wall === 'right');
-    const slopesAcrossThisWall = ((wall === 'front' || wall === 'back') && (config.roofType === 'slope-left' || config.roofType === 'slope-right'))
-      || ((wall === 'left' || wall === 'right') && (config.roofType === 'slope-front' || config.roofType === 'slope-back'));
     if (slopesAcrossThisWall) {
       doc.line(x, highOnLeft ? y - roofRise : y, x + width, highOnLeft ? y : y - roofRise);
     } else {
@@ -270,6 +271,36 @@ function drawElevationPlan(
     doc.text(`Garaz ${wallWidthCm} cm + wiata ${carportWidthCm} cm`, x + width / 2, y + wallHeight + 14, { align: 'center' });
   }
   doc.text(`${config.height} cm`, x - 8, y + wallHeight / 2, { angle: 90, align: 'center' });
+}
+
+function drawCarportTechnicalPage(doc: import('jspdf').jsPDF, config: GarageConfig) {
+  const carportWidthCm = config.carportWidth || 0;
+  const carportSide: WallFace = config.carportSide === 'left' ? 'left' : 'right';
+  const oppositeSide: WallFace = carportSide === 'left' ? 'right' : 'left';
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(63, 63, 70);
+  doc.text(
+    `Wiata zintegrowana: ${carportWidthCm} cm, strona ${carportSide === 'left' ? 'lewa' : 'prawa'}. Linie niebieskie oznaczaja konstrukcje i slupy wiaty.`,
+    14,
+    32,
+    { maxWidth: 182 },
+  );
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(30, 30, 30);
+  doc.text('Rzut z gory - garaz z wiata', 14, 46);
+  drawDimensionPlan(doc, config, 30, 56, 150);
+
+  drawElevationPlan(doc, config, 'front', 'Elewacja frontowa z wiata', 24, 160, 162);
+
+  doc.setFillColor(239, 246, 255);
+  doc.setDrawColor(37, 99, 235);
+  doc.roundedRect(18, 218, 174, 66, 2, 2, 'FD');
+  drawElevationPlan(doc, config, carportSide, `Widok od strony wiaty (${carportSide === 'left' ? 'lewa' : 'prawa'})`, 28, 241, 70);
+  drawElevationPlan(doc, config, oppositeSide, 'Widok od strony przeciwnej', 112, 241, 70);
 }
 
 function drawTechnicalLegend(doc: import('jspdf').jsPDF, y: number, includeOffsets = false) {
@@ -397,6 +428,12 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   drawElevationPlan(doc, input.config, 'back', 'Elewacja tylna', 17, 177, 78);
   drawElevationPlan(doc, input.config, 'left', 'Elewacja lewa', 112, 177, 78);
   drawTechnicalLegend(doc, 258, true);
+
+  if (input.config.hasCarport && (input.config.carportWidth || 0) > 0) {
+    doc.addPage();
+    addHeader('Rysunki techniczne - wiata zintegrowana');
+    drawCarportTechnicalPage(doc, input.config);
+  }
 
   const orderedWalls: WallFace[] = ['front', 'right', 'back', 'left'];
   const availableViews = orderedWalls.filter(wall => Boolean(input.views[wall]));
