@@ -58,6 +58,8 @@ const profileNames: Record<string, string> = {
   'pionowe-t17': 'Pionowe T-17 (mini rąbek)', 'poziome-t17': 'Poziome T-17',
 };
 const faceNames: Record<WallFace, string> = { front: 'Przód', back: 'Tył', left: 'Lewa', right: 'Prawa' };
+const materialLabel = (config: GarageConfig) => config.buildingMaterial === 'pir' ? 'Płyta warstwowa PIR' : 'Blacha standardowa';
+
 const profileLabel = (profile: string | undefined) => profileNames[profile || ''] || profile || 'Według konfiguracji';
 
 function getCarportWidthCm(config: GarageConfig) {
@@ -498,7 +500,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     layout.font(11, true);
     doc.text('Konfiguracja indywidualna', 24, heroY + 12);
     layout.font(9, false, PDF_MUTED);
-    doc.text(`Dach ${roofNames[config.roofType] || config.roofType}\nŚciany: ${profileLabel(config.wallProfile)} / ${color(config.wallColor)}`, 24, heroY + 22, { maxWidth: 158, lineHeightFactor: 1.45 });
+    doc.text(`Dach ${roofNames[config.roofType] || config.roofType}\nŚciany: ${config.buildingMaterial === 'pir' ? materialLabel(config) : profileLabel(config.wallProfile)} / ${color(config.wallColor)}`, 24, heroY + 22, { maxWidth: 158, lineHeightFactor: 1.45 });
   }
   const metricY = heroY + heroHeight + 7;
   const metrics = [['SZEROKOŚĆ GARAŻU', config.width], ['DŁUGOŚĆ', config.length], ['WYSOKOŚĆ ŚCIAN', config.height]] as const;
@@ -526,9 +528,10 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     .map(face => face === 'front' ? 'przód' : face === 'back' ? 'tył' : 'bok').join(', ');
   const details = [
     ['Wymiary garażu', `${config.width} x ${config.length} x ${config.height} cm (szer. x dł. x wys. ścian)`],
+    ['Materiał ścian i dachu', materialLabel(config)],
     ['Typ dachu', roofNames[config.roofType] || config.roofType],
-    ['Pokrycie dachu', config.extraOptions?.includes('roofTile') ? 'Blachodachówka' : `Blacha trapezowa / ${profileLabel(config.roofProfile)}`],
-    ['Ściany', `${profileLabel(config.wallProfile)}\nKolor: ${color(config.wallColor)}`],
+    ['Pokrycie dachu', config.buildingMaterial === 'pir' ? materialLabel(config) : config.extraOptions?.includes('roofTile') ? 'Blachodachówka' : `Blacha trapezowa / ${profileLabel(config.roofProfile)}`],
+    ['Ściany', `${config.buildingMaterial === 'pir' ? materialLabel(config) : profileLabel(config.wallProfile)}\nKolor: ${color(config.wallColor)}`],
     ['Dach - kolor', color(config.roofColor)],
     ['Bramy - wykończenie', `${profileLabel(config.gateProfile)}\nKolor: ${color(config.gateColor)}`],
     ['Drzwi / okna - kolory', `Drzwi: ${color(config.doorColor)}\nOkna: ${color(config.windowColor)}`],

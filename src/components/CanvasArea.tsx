@@ -7,6 +7,7 @@ import GarageModel from './GarageModel';
 import { Suspense, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { getThreePerformanceProfile } from '@/lib/threePerformance';
+import { getGarageCameraDistance } from '@/lib/garageMaterial';
 
 interface CanvasAreaProps {
   config: GarageConfig;
@@ -19,6 +20,8 @@ interface CanvasAreaProps {
 
 function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFace; config: GarageConfig, activeDimId?: string | null }) {
   const controlsRef = useRef<any>(null);
+  const size = useThree(state => state.size);
+  const distance = getGarageCameraDistance(config, selectedWall, size.width / Math.max(size.height, 1));
 
   useEffect(() => {
     if (!controlsRef.current) return;
@@ -27,10 +30,8 @@ function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFa
     const h = config.height * 0.01;
     
     let sceneCenterX = 0;
-    let sceneWidth = w;
     if (config.hasCarport && config.carportWidth) {
       const cw_m = config.carportWidth * 0.01;
-      sceneWidth += cw_m;
       if (config.carportSide === 'right') sceneCenterX = cw_m / 2;
       else if (config.carportSide === 'left') sceneCenterX = -cw_m / 2;
     }
@@ -40,7 +41,7 @@ function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFa
     let camX = sceneCenterX;
     let camZ = 0;
     
-    const dist = Math.max(sceneWidth, l) + 4;
+    const dist = distance;
     const zoomMultiplier = activeDimId ? 0.45 : 1; 
 
     switch (selectedWall) {
@@ -50,9 +51,9 @@ function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFa
       case 'right': targetX = w / 2; camX = w / 2 + dist * zoomMultiplier; break;
     }
     controlsRef.current.setLookAt(camX, h / 2, camZ, targetX, h / 2, targetZ, true);
-  }, [selectedWall, config.width, config.length, config.height, activeDimId, config.hasCarport, config.carportWidth, config.carportSide]);
+  }, [selectedWall, config.width, config.length, config.height, activeDimId, config.hasCarport, config.carportWidth, config.carportSide, distance]);
 
-  return <CameraControls ref={controlsRef} minPolarAngle={Math.PI / 8} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={2} maxDistance={25} makeDefault />;
+  return <CameraControls ref={controlsRef} minPolarAngle={Math.PI / 8} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={2} maxDistance={Math.max(25, distance * 1.5)} makeDefault />;
 }
 
 function MeasurementArrow({ start, end, value }: { start: [number, number, number], end: [number, number, number], value: number }) {
@@ -110,17 +111,23 @@ function DimensionsOverlay({ config, activeId }: { config: GarageConfig, activeI
 }
 
 function SceneGround({ config }: { config: GarageConfig }) {
+  const size = useThree(state => state.size);
+  const aspect = size.width / Math.max(size.height, 1);
+  const groundSize = Math.max(60, 2 * (
+    Math.max(getGarageCameraDistance(config, 'front', aspect), getGarageCameraDistance(config, 'left', aspect))
+    + Math.max(config.width, config.length) / 200 + 10
+  ));
   const grassSource = useTexture('/textures/trawa.webp');
   const drivewaySource = useTexture('/textures/podjazd-kostka.webp');
   const grass = useMemo(() => {
     const texture = grassSource.clone();
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(18, 18);
+    texture.repeat.set(groundSize * 0.3, groundSize * 0.3);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 4;
     texture.needsUpdate = true;
     return texture;
-  }, [grassSource]);
+  }, [grassSource, groundSize]);
 
   const driveway = useMemo(() => {
     const texture = drivewaySource.clone();
@@ -158,7 +165,7 @@ function SceneGround({ config }: { config: GarageConfig }) {
   return (
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.035, 0]}>
-        <planeGeometry args={[60, 60]} />
+        <planeGeometry args={[groundSize, groundSize]} />
         <meshStandardMaterial map={grass} color="#8ca276" roughness={0.98} metalness={0} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.018, garageFront + 4]}>

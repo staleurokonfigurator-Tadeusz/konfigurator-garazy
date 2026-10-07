@@ -21,6 +21,7 @@ export interface GarageElement {
 }
 
 export interface GarageConfig {
+  buildingMaterial?: 'sheet' | 'pir';
   width: number;
   length: number;
   height: number;

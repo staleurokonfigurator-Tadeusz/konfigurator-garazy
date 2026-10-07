@@ -8,6 +8,7 @@ import React, { useMemo, useState, Dispatch, SetStateAction } from 'react';
 import dynamic from 'next/dynamic';
 import { getTrustedParentOrigin, postCheckoutToWordPress, WORDPRESS_MESSAGE_VERSION } from '@/lib/wordpressBridge';
 import RoofTypeIcon from './RoofTypeIcon';
+import { getPirPricePerM2, isPirGarage, MAX_GARAGE_WIDTH_CM, MAX_GARAGE_LENGTH_CM } from '@/lib/garageMaterial';
 
 const OfferDialog = dynamic(() => import('@/components/OfferDialog'), { ssr: false });
 
@@ -54,6 +55,8 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
   const [isOfferOpen, setIsOfferOpen] = useState(false);
   
   const pricing = appData?.pricing || {};
+  const isPir = isPirGarage(config);
+  const pirPricePerM2 = getPirPricePerM2(pricing.sqm_pir_v);
   const customAddons = appData?.addons || [];
   const dbColors = appData?.colors || [];
 
@@ -88,7 +91,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     let percentFinalMultiplier = 1;
 
     const isDualSlopeRoof = config.roofType === 'dual-slope' || config.roofType === 'dual-slope-front-back';
-    let baseM2Price = isDualSlopeRoof ? safeNum(pricing.sqm_dual_v) : safeNum(pricing.sqm_single_v);
+    let baseM2Price = isPirGarage(config) ? getPirPricePerM2(pricing.sqm_pir_v) : (isDualSlopeRoof ? safeNum(pricing.sqm_dual_v) : safeNum(pricing.sqm_single_v));
     
     const baseH = safeNum(appData?.baseConfig?.h) || 210;
     const extraHeight = Math.max(0, config.height - baseH);
@@ -149,7 +152,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
       }
     });
 
-    if (config.extraOptions?.includes('roofTile')) {
+    if (!isPirGarage(config) && config.extraOptions?.includes('roofTile')) {
        totalBase += area * safeNum(pricing.roof_tile_v);
     }
 
@@ -204,6 +207,9 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     if (isReadOnly) return;
     setConfig(prev => {
       const next = { ...prev, [key]: value };
+      if (key === 'buildingMaterial' && value === 'pir') {
+        next.extraOptions = (prev.extraOptions || []).filter(option => option !== 'roofTile');
+      }
       if (key === 'applyColorToAll' && value === true) {
         next.roofColor = prev.wallColor;
         next.gateColor = prev.wallColor;
@@ -361,6 +367,20 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
   return (
     <div className="pb-12">
+      <Section title="Materiał ścian i dachu" icon={<Layers size={20} />}>
+        <div className="grid grid-cols-2 gap-3">
+          {([{ id: 'sheet', label: 'Standardowa blacha', detail: 'Cena według cennika' },
+            { id: 'pir', label: 'Płyta warstwowa PIR', detail: `${pirPricePerM2} zł / m² garażu` }] as const).map(material => (
+            <button key={material.id} disabled={isReadOnly} aria-pressed={(isPir ? 'pir' : 'sheet') === material.id}
+              onClick={() => updateConfig('buildingMaterial', material.id)}
+              className={`rounded-xl border-2 p-3 text-left ${(isPir ? 'pir' : 'sheet') === material.id ? 'border-[var(--theme)] bg-zinc-50' : 'border-zinc-200 bg-white'} disabled:cursor-not-allowed`}>
+              <span className="block text-sm font-bold">{material.label}</span>
+              <span className="mt-1 block text-xs text-zinc-500">{material.detail}</span>
+            </button>
+          ))}
+        </div>
+        {isPir && <p className="mt-3 text-xs text-zinc-600">PIR obejmuje ściany i dach. Cena podstawowa za powierzchnię szerokość × długość; dopłaty za wysokość i wyposażenie według cennika. Bramy, drzwi i okna wybierasz osobno.</p>}
+      </Section>
       <Section title="Wybierz Typ Garażu" icon={<Home size={20} />}>
         <div className="grid grid-cols-2 gap-3">
           {([
@@ -394,7 +414,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
       <Section title="Wymiary Główne" icon={<Maximize size={20} />}>
         <div className="space-y-6">
-        {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: 800, step: 10 }, { label: 'Długość', key: 'length' as const, min: 300, max: 1000, step: 10 }, { label: 'Wysokość', key: 'height' as const, min: 200, max: 350, step: 10 }].map(dim => (
+        {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: MAX_GARAGE_WIDTH_CM, step: 10 }, { label: 'Długość', key: 'length' as const, min: 300, max: MAX_GARAGE_LENGTH_CM, step: 10 }, { label: 'Wysokość', key: 'height' as const, min: 200, max: 350, step: 10 }].map(dim => (
             <div key={dim.key}>
               <div className="flex justify-between mb-2 text-sm font-semibold text-zinc-700"><label>{dim.label}</label><span className="bg-white px-2 py-1 rounded border text-[var(--theme)] font-bold">{config[dim.key]} cm</span></div>
               {!isReadOnly && <input type="range" min={dim.min} max={dim.max} step={dim.step} value={config[dim.key]} onChange={(e) => updateConfig(dim.key, Number(e.target.value))} className="w-full" style={{accentColor: 'var(--theme)'}} />}
@@ -766,11 +786,11 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         <div className="space-y-3">
           <label className={`flex items-center justify-between p-3 rounded-lg border border-zinc-200 hover:bg-zinc-50 transition-colors bg-white shadow-sm ${isReadOnly ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}>
             <div className="flex items-center gap-3">
-              <input type="checkbox" disabled={isReadOnly} checked={config.extraOptions?.includes('roofTile')} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), 'roofTile'] : (config.extraOptions || []).filter(x => x !== 'roofTile'); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
+              <input type="checkbox" disabled={isReadOnly || isPir} checked={!isPir && !!config.extraOptions?.includes('roofTile')} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), 'roofTile'] : (config.extraOptions || []).filter(x => x !== 'roofTile'); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
               <span className="text-sm font-semibold text-zinc-700">Dach: Blachodachówka</span>
             </div>
             <span className="text-xs font-bold text-[var(--theme)] bg-[var(--theme)]/10 px-2 py-1 rounded">
-              +{Math.round((config.width / 100) * (config.length / 100) * safeNum(pricing.roof_tile_v))} zł
+              {isPir ? 'Niedostępne dla PIR' : `+${Math.round((config.width / 100) * (config.length / 100) * safeNum(pricing.roof_tile_v))} zł`}
             </span>
           </label>
 
@@ -826,6 +846,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
       <Section title="Kolory Garażu i Przetłoczenia" icon={<PaintBucket size={20} />}>
         <div className="mb-6">
+          {isPir ? <p className="text-sm text-zinc-600">Ściany PIR: panele z widocznymi łączeniami. Przetłoczenia blachy dotyczą tylko wariantu standardowego.</p> : <>
           <h3 className="font-bold text-sm mb-3 uppercase tracking-wider text-zinc-500">Wzór Przetłoczenia Ścian</h3>
           <div className="grid grid-cols-2 gap-3">
             {[
@@ -850,7 +871,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                 <span className="text-xs font-semibold text-zinc-700">{prof.label}</span>
               </button>
             ))}
-          </div>
+          </div></>}
         </div>
 
         <div className="bg-zinc-900 text-white rounded-xl overflow-hidden shadow-lg">
