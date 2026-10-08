@@ -10,9 +10,11 @@ const compile = source => ts.transpileModule(source, {compilerOptions: {
 }}).outputText;
 function load(relative) {
   const exports = {};
-  new Function('exports', 'require', compile(fs.readFileSync(path.join(root, relative), 'utf8')))(exports, require);
+  new Function('exports', 'require', compile(fs.readFileSync(path.join(root, relative), 'utf8')))(exports, name => name.startsWith('.') ? load(path.relative(root, path.resolve(path.dirname(path.join(root, relative)), name + '.ts'))) : require(name));
   return exports;
 }
+const options = load('src/lib/garageOptions.ts');
+const storage = load('src/lib/projectStorage.ts');
 const material = load('src/lib/garageMaterial.ts');
 const collision = load('src/lib/collision.ts');
 const joints = load('src/components/PirPanelJoints.tsx');
@@ -28,11 +30,11 @@ function visit(node) {
 visit(parsed);
 assert.ok(priceCallback);
 // Execute the callback used by the UI itself, rather than duplicating the price formula.
-const calculate = new Function('config','pricing','customAddons','appData','dbColors','isPirGarage','getPirPricePerM2',
+const calculate = new Function('config','pricing','customAddons','appData','dbColors','isPirGarage','getPirPricePerM2','isAddonAvailable',
   compile('const safeNum = (val: unknown) => { const num = Number(val); return isNaN(num) ? 0 : num; }; return ('+priceCallback+')();'));
 const base = {width:300,length:500,height:210,roofType:'dual-slope',elements:[],extraOptions:[],gutters:false};
 const pricing = {sqm_single_v:150,sqm_dual_v:200,gate_up_2x2:800,gutter_v:10,roof_tile_v:20,integrated_carport_m2_v:100};
-const price = (config, rates=pricing, addons=[]) => calculate(config,rates,addons,{baseConfig:{h:210}},[],material.isPirGarage,material.getPirPricePerM2);
+const price = (config, rates=pricing, addons=[]) => calculate(config,rates,addons,{baseConfig:{h:210}},[],material.isPirGarage,material.getPirPricePerM2,options.isAddonAvailable);
 
 test('legacy configs remain sheet; standard roof prices are preserved', () => {
   assert.equal(material.isPirGarage(base),false);
@@ -94,4 +96,60 @@ test('PIR joint geometry remains finite and skips door/window openings', () => {
   geometry.dispose();
   assert.equal(material.MAX_GARAGE_WIDTH_CM,3000);
   assert.equal(material.MAX_GARAGE_LENGTH_CM,3000);
+});
+
+const gate = (id,width,x,type='up-and-over') => ({id,type:'gate',wall:'front',width,height:200,x,y:0,gateType:type});
+test('second gate can become sectional when centred first gate must move', () => {
+  const original={...base,width:860,elements:[gate('first',300,0,'sectional'),gate('second',200,-320,'swing')]};
+  const next=options.updateGarageElement(original,'second',{gateType:'sectional',width:300});
+  assert.ok(next);
+  assert.equal(next.elements[1].gateType,'sectional');
+  assert.equal(next.elements[1].width,300);
+  assert.ok(next.elements.every(el=>collision.checkWallBounds(collision.getElementRect(el),860,210)));
+  assert.equal(collision.checkCollision(...next.elements.map(collision.getElementRect)),false);
+  assert.equal(original.elements[1].gateType,'swing');
+});
+test('resize commits found position; impossible fit and colliding manual drag are rejected', () => {
+  const original={...base,width:500,elements:[gate('first',200,-140)]};
+  const next=options.updateGarageElement(original,'first',{width:300});
+  assert.ok(next && next.elements[0].x!==-140);
+  assert.ok(collision.checkWallBounds(collision.getElementRect(next.elements[0]),500,210));
+  const two={...base,width:500,elements:[gate('first',300,0),gate('second',200,-200)]};
+  assert.equal(options.updateGarageElement(two,'second',{width:300,gateType:'sectional'}),null);
+  assert.equal(options.updateGarageElement({...two,width:860},'second',{x:0}),null);
+});
+test('sectional motors depend on any sectional gate and inactive selections are removed', () => {
+  const motor={id:'motor',label:'Napęd do bramy segmentowej CAME',price:1350,type:'fixed'};
+  const anchor={id:'anchor',label:'Kotwiczenie',price:250,type:'fixed'};
+  const generic={id:'generic',label:'Automat do bramy',price:100,type:'fixed'};
+  const addons=[motor,anchor,generic];
+  const config={...base,extraOptions:['motor','anchor','generic']};
+  assert.equal(price(config,pricing,addons),3350);
+  assert.deepEqual(options.cleanUnavailableOptions(config,addons).extraOptions,['anchor','generic']);
+  const withGate={...config,elements:[gate('first',200,0,'swing'),{...gate('second',300,0,'sectional'),wall:'back'}]};
+  assert.equal(options.isAddonAvailable(withGate,motor),true);
+  assert.equal(price(withGate,pricing,addons)-price({...withGate,extraOptions:['anchor','generic']},pricing,addons),1350);
+  assert.equal(options.isAddonAvailable(base,generic),true);
+  assert.equal(options.requiresSectionalGate({id:'naped-do-bramy-segmentowej-hato_970'}),true);
+  assert.deepEqual(options.cleanUnavailableOptions({...withGate,elements:[]},addons).extraOptions,['anchor','generic']);
+});
+const fullConfig={...base,buildingMaterial:'pir',width:3000,length:3000,applyColorToAll:false,removeFoil:false,
+  ...Object.fromEntries(['wallColor','roofColor','gateColor','doorColor','windowColor','cornerFlashingColor','roofFlashingColor','gutterColor'].map(k=>[k,'zloty-dab'])),
+  ...Object.fromEntries(['wallProfile','roofProfile','gateProfile','doorProfile'].map(k=>[k,'pionowe-t7'])),
+  elements:[{id:'light',type:'skylight',wall:'front',x:0,y:200,width:2800,height:30}]};
+test('draft and project files round trip 30m PIR, wood and wide skylights', () => {
+  const entries=new Map();const local={getItem:k=>entries.get(k)||null,setItem:(k,v)=>entries.set(k,v)};
+  const key=storage.projectStorageKey('https://konfigurator.staleuro.pl/konfigurator',false);
+  storage.writeDraft(local,key,fullConfig);
+  assert.deepEqual(storage.readDraft(local,key),fullConfig);
+  const project={version:1,id:'saved',name:'Garaż domu',savedAt:'2026-10-08',config:fullConfig};
+  assert.deepEqual(storage.parseProjectFile(JSON.stringify(project)),project);
+  local.setItem(key+':saved',JSON.stringify([project,{version:1,config:{width:9999}}]));
+  assert.deepEqual(storage.readSavedProjects(local,key),[project]);
+  assert.notEqual(key,storage.projectStorageKey('https://gard-house.pl',false));
+  assert.notEqual(key,storage.projectStorageKey('https://konfigurator.staleuro.pl',true));
+  local.setItem(key+':draft','broken'); assert.equal(storage.readDraft(local,key),null);
+  for(const config of [{...fullConfig,width:3001},{...fullConfig,height:351},{...fullConfig,elements:[...fullConfig.elements,...fullConfig.elements]}]) {
+    assert.throws(()=>storage.parseProjectFile(JSON.stringify({...project,config})));
+  }
 });

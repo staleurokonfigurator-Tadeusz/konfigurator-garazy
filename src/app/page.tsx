@@ -10,6 +10,9 @@ import { v4 as uuidv4 } from 'uuid';
 import dynamic from 'next/dynamic';
 import { Eye, X } from 'lucide-react';
 import Script from 'next/script';
+import ProjectToolbar from '@/components/ProjectToolbar';
+import { projectStorageKey, readDraft, writeDraft } from '@/lib/projectStorage';
+import { cleanUnavailableOptions } from '@/lib/garageOptions';
 
 const ModelViewer = 'model-viewer' as any;
 
@@ -96,6 +99,11 @@ export default function Home() {
   const [arBlobUrl, setArBlobUrl] = useState<string | null>(null);
   const offerExportRef = useRef<{ resolve: (blob: Blob) => void; reject: (error: Error) => void } | null>(null);
 
+  const initialProject = useRef<GarageConfig>(INITIAL_CONFIG);
+  const [projectKey, setProjectKey] = useState('');
+  const [draftError, setDraftError] = useState(false);
+  // Embed data and browser storage are available only after hydration.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -104,7 +112,6 @@ export default function Home() {
     const savedConfigBase64 = params.get('load_config');
     const storeUrl = params.get('store_url');
     // Stan zależy od parametrów strony osadzającej i musi zostać odczytany po hydracji.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsOfferMode(params.get('offer_mode') === '1');
 
     if (storeUrl) {
@@ -113,37 +120,46 @@ export default function Home() {
       setWpAdminUrl(`${decodedStoreUrl}/wp-admin/admin.php?page=garage-orders`);
     }
 
+    let payload = FALLBACK_DATA as typeof FALLBACK_DATA & {activeType?: string};
     if (initDataRaw) {
-      try {
-        const decodedJson = decodeURIComponent(escape(window.atob(decodeURIComponent(initDataRaw))));
-        const payload = JSON.parse(decodedJson);
-        setAppData(payload);
-        if (!savedConfigBase64) {
-          const ral9006Id = findRal9006Id(payload.colors);
-          setConfig(prev => applyDefaultRal9006({
-            ...prev,
-            width: payload.baseConfig.w,
-            length: payload.baseConfig.l,
-            height: payload.baseConfig.h,
-          }, ral9006Id));
-        }
-      } catch (e: any) { setAppData(FALLBACK_DATA); }
-    } else if (!savedConfigBase64) {
-      setAppData(FALLBACK_DATA);
+      try { payload = JSON.parse(decodeURIComponent(escape(window.atob(decodeURIComponent(initDataRaw))))); }
+      catch { /* Use standalone defaults if embed data is invalid. */ }
     }
-
+    setAppData(payload);
+    const initial = applyDefaultRal9006({ ...INITIAL_CONFIG,
+      width: payload.baseConfig.w, length: payload.baseConfig.l, height: payload.baseConfig.h,
+    }, findRal9006Id(payload.colors));
+    initialProject.current = initial;
     if (savedConfigBase64) {
       try {
-        const decodedJson = decodeURIComponent(escape(window.atob(decodeURIComponent(savedConfigBase64))));
-        const parsedConfig = JSON.parse(decodedJson);
-        
-        setConfig(parsedConfig);
+        setConfig(JSON.parse(decodeURIComponent(escape(window.atob(decodeURIComponent(savedConfigBase64))))));
         setIsReadOnly(true);
-      } catch (e) { 
-        console.error("Błąd dekodowania BIM:", e); 
-      }
+      } catch { setConfig(initial); }
+      return;
     }
-  }, []); 
+    if (!payload.activeType || payload.activeType === 'garage') {
+      const key = projectStorageKey(storeUrl || payload.storeUrl || '', params.get('offer_mode') === '1');
+      let draft: GarageConfig | null = null;
+      try { draft = readDraft(window.localStorage, key); } catch { setDraftError(true); }
+      setConfig(cleanUnavailableOptions(draft || initial, payload.addons));
+      setProjectKey(key);
+    } else { setConfig(initial); }
+  }, []);
+
+  useEffect(() => {
+    if (!projectKey || isReadOnly) return;
+    try { writeDraft(window.localStorage, projectKey, config); setDraftError(false); }
+    catch { setDraftError(true); }
+  }, [config, projectKey, isReadOnly]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const setGarageConfig = useCallback<React.Dispatch<React.SetStateAction<GarageConfig>>>(next => {
+    setConfig(previous => cleanUnavailableOptions(typeof next === 'function' ? next(previous) : next, appData?.addons || []));
+  }, [appData]);
+  const resetProject = () => {
+    setGarageConfig({ ...initialProject.current, elements: initialProject.current.elements.map(element => ({...element, id:uuidv4()})) });
+    setSelectedWall('front'); setActiveDimId(null); setActiveStep(1);
+  };
 
   useEffect(() => () => {
     if (arBlobUrl) URL.revokeObjectURL(arBlobUrl);
@@ -292,9 +308,11 @@ export default function Home() {
             ) : appData?.activeType === 'trash' ? (
               <TrashConfigPanel config={config} setConfig={setConfig} selectedWall={selectedWall} setSelectedWall={setSelectedWall} appData={appData} isGeneratingAR={isGeneratingAR} setIsGeneratingAR={setIsGeneratingAR} />
             ) : (
+              <>
+              {!isReadOnly && projectKey && <ProjectToolbar config={config} storageKey={projectKey} onLoad={next=>{setGarageConfig(next);setActiveDimId(null);setSelectedWall('front');}} onReset={resetProject} draftError={draftError} />}
               <ConfigPanel 
                 config={config} 
-                setConfig={setConfig} 
+                setConfig={setGarageConfig}
                 selectedWall={selectedWall} 
                 setSelectedWall={setSelectedWall} 
                 appData={appData} 
@@ -307,6 +325,7 @@ export default function Home() {
                 activeDimId={activeDimId} 
                 setActiveDimId={setActiveDimId}
               />
+              </>
             )}
           </div>
 

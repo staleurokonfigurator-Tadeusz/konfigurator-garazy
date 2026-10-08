@@ -2,6 +2,7 @@
 
 import { GarageConfig, RoofType, WallFace, GarageElement, GateType, SheetProfile } from '@/types';
 import { Home, Maximize, PaintBucket, Plus, Trash2, BoxSelect, Layers, ChevronDown, Edit2, Settings, Smartphone, Eye, FileText } from 'lucide-react';
+import { isAddonAvailable, cleanUnavailableOptions, updateGarageElement } from '@/lib/garageOptions';
 import { findValidPosition } from '@/lib/collision';
 import { v4 as uuidv4 } from 'uuid';
 import React, { useMemo, useState, Dispatch, SetStateAction } from 'react';
@@ -50,6 +51,7 @@ function Section({ title, icon, children, defaultOpen = true }: { title: string;
 
 export default function ConfigPanel({ config, setConfig, selectedWall, setSelectedWall, appData, isGeneratingAR, setIsGeneratingAR, isReadOnly = false, isOfferMode = false, storeUrl, requestARExport, activeDimId, setActiveDimId }: ConfigPanelProps) {
   const [activeColorEdit, setActiveColorEdit] = useState<string | null>(null);
+  const [elementError, setElementError] = useState('');
   const [region, setRegion] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isOfferOpen, setIsOfferOpen] = useState(false);
@@ -190,7 +192,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     let customAddonTotal = 0;
     (config.extraOptions || []).forEach(addonId => {
       const addon = customAddons.find((a: any) => a.id === addonId);
-      if (addon) {
+      if (addon && isAddonAvailable(config, addon)) {
         if (addon.type === 'fixed') customAddonTotal += safeNum(addon.price);
         else if (addon.type === 'pct' || addon.type === 'pct_total') percentFinalMultiplier += (safeNum(addon.price) / 100);
         else if (addon.type === 'pct_base') percentBaseMultiplier += (safeNum(addon.price) / 100);
@@ -279,25 +281,16 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
   const updateElement = (id: string, updates: Partial<GarageElement>) => {
     if (isReadOnly && !updates.hasOwnProperty('isOpen')) return; 
 
-    setConfig(prev => {
-      const newElements = prev.elements.map(el => {
-        if (el.id === id) {
-          const updated = { ...el, ...updates };
-          const wallWidth = updated.wall === 'front' || updated.wall === 'back' ? prev.width : prev.length;
-          const pos = findValidPosition(updated, prev.elements, wallWidth, prev.height);
-          if (!pos && (updates.x !== undefined || updates.y !== undefined || updates.width !== undefined || updates.height !== undefined)) return el; 
-          if (pos && (updates.x !== undefined || updates.y !== undefined)) { if (pos.x !== updated.x || pos.y !== updated.y) return el; }
-          return updated as GarageElement;
-        }
-        return el;
-      });
-      return { ...prev, elements: newElements };
-    });
+    const next = updateGarageElement(config, id, updates);
+    if (!next) { setElementError('Brak miejsca na taki rozmiar bramy lub otworu. Zwiększ szerokość ściany albo zmień rozmieszczenie elementów.'); return; }
+    setElementError('');
+    setConfig(cleanUnavailableOptions(next, customAddons));
   };
 
   const removeElement = (id: string) => {
     if (isReadOnly) return;
-    setConfig(prev => ({ ...prev, elements: prev.elements.filter(e => e.id !== id) }));
+    setElementError('');
+    setConfig(prev => cleanUnavailableOptions({ ...prev, elements: prev.elements.filter(e => e.id !== id) }, customAddons));
   }
   
   const gates = config.elements.filter(e => e.type === 'gate');
@@ -490,6 +483,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
           </div>
         )}
 
+        {elementError && <p role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{elementError}</p>}
         {gates.length === 0 && (
           <div className="text-sm text-zinc-400 text-center py-6 bg-white border border-dashed rounded-lg mb-4 flex flex-col items-center justify-center gap-2">
             <BoxSelect size={24} className="opacity-20" />
@@ -806,7 +800,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
           <label className={`flex items-center justify-between p-3 rounded-lg border border-zinc-200 hover:bg-zinc-50 transition-colors bg-white shadow-sm ${isReadOnly ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}>
             <div className="flex items-center gap-3">
-              <input type="checkbox" disabled={isReadOnly} checked={config.extraOptions?.includes('cornerFlashings')} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), 'cornerFlashings'] : (config.extraOptions || []).filter(x => x !== 'cornerFlashings'); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
+              <input type="checkbox" disabled={isReadOnly} checked={config.extraOptions?.includes('cornerFlashings') ?? false} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), 'cornerFlashings'] : (config.extraOptions || []).filter(x => x !== 'cornerFlashings'); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
               <span className="text-sm font-semibold text-zinc-700">Obróbki narożne ściany</span>
             </div>
             <span className="text-xs font-bold text-zinc-500 bg-zinc-100 px-2 py-1 rounded">
@@ -816,7 +810,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
           <label className={`flex items-center justify-between p-3 rounded-lg border border-zinc-200 hover:bg-zinc-50 transition-colors bg-white shadow-sm ${isReadOnly ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}>
             <div className="flex items-center gap-3">
-              <input type="checkbox" disabled={isReadOnly} checked={config.extraOptions?.includes('roofFlashings')} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), 'roofFlashings'] : (config.extraOptions || []).filter(x => x !== 'roofFlashings'); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
+              <input type="checkbox" disabled={isReadOnly} checked={config.extraOptions?.includes('roofFlashings') ?? false} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), 'roofFlashings'] : (config.extraOptions || []).filter(x => x !== 'roofFlashings'); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
               <span className="text-sm font-semibold text-zinc-700">Obróbki krawędzi dachu</span>
             </div>
             <span className="text-xs font-bold text-zinc-500 bg-zinc-100 px-2 py-1 rounded">
@@ -824,7 +818,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
             </span>
           </label>
 
-          {customAddons.map((opt: any) => {
+          {customAddons.filter((opt: {id: string; label?: string}) => isAddonAvailable(config, opt)).map((opt: any) => {
             const isActive = (config.extraOptions || []).includes(opt.id);
             let priceLabel = `+${safeNum(opt.price)} zł`;
             if (opt.type === 'pct' || opt.type === 'pct_total' || opt.type === 'pct_base') priceLabel = `+${safeNum(opt.price)}%`;

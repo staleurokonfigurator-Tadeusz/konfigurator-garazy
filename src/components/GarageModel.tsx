@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { GarageConfig, WallFace, SheetProfile } from '@/types';
 import * as THREE from 'three';
 import { Geometry, Base, Subtraction } from '@react-three/csg';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useTexture } from '@react-three/drei';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import LightweightEnvironment from './LightweightEnvironment';
@@ -455,7 +455,10 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
   const isPir = isPirGarage(config);
   // Representative panel thickness in the preview; external dimensions stay unchanged.
   const t = isPir ? 0.10 : 0.05;
-  const slopeH = 0.4; 
+  const slopeH = 0.4;
+  const roofContactOverlap = 0.005;
+  const materialRoot = useRef<THREE.Group>(null);
+  const invalidate = useThree(state => state.invalidate); 
 
   const hasCarport = config.hasCarport || false;
   const cw = hasCarport ? (config.carportWidth || 300) * 0.01 : 0;
@@ -562,6 +565,16 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     [DARK_WALNUT_TEXTURE]: walnutColor,
     [`${DARK_WALNUT_TEXTURE}_horiz`]: walnutColorHoriz,
   }), [loadedTextures, woodColor, woodColorHoriz, walnutColor, walnutColorHoriz]);
+
+  // Demand rendering needs a frame after material maps and shader flags change.
+  useLayoutEffect(() => {
+    materialRoot.current?.traverse(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach(material => { material.needsUpdate = true; });
+    });
+    invalidate();
+  }, [config.wallColor, config.roofColor, config.gateColor, config.doorColor, config.windowColor, config.cornerFlashingColor, config.roofFlashingColor, config.gutterColor, config.carportBaseColor, config.carportInsertColor, materialTextures, colors, invalidate]);
 
   useEffect(() => () => {
     woodColor.dispose();
@@ -758,9 +771,9 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     const roofTexToUse = isRoofWood ? baseRoofWood : undefined;
     const roofReliefTexture = isRoofWood ? baseRoofWood : roofTileTexture;
 
-    const renderFasciaMat = (attachName: string) => <meshStandardMaterial attach={attachName} color={isPir && !showRoofFlashings ? '#e8d8ad' : (isFasciaWood ? '#ffffff' : fasciaHex)} map={isFasciaWood && baseFasciaWood && (!isPir || showRoofFlashings) ? baseFasciaWood : undefined} roughness={0.8} metalness={isPir && !showRoofFlashings ? 0 : 0.2} visible={isPir || !!showRoofFlashings} side={THREE.DoubleSide} />;
+    const renderFasciaMat = (attachName: string) => !showRoofFlashings && !isPir ? renderMainRoofMat(attachName) : <meshStandardMaterial attach={attachName} color={isPir && !showRoofFlashings ? '#e8d8ad' : (isFasciaWood ? '#ffffff' : fasciaHex)} map={isFasciaWood && baseFasciaWood && (!isPir || showRoofFlashings) ? baseFasciaWood : undefined} roughness={0.8} metalness={isPir && !showRoofFlashings ? 0 : 0.2} visible={isPir || !!showRoofFlashings} side={THREE.DoubleSide} />;
     const roofProfileMap = profileTextures[config.roofProfile] || profileTextures['pionowe-t7'];
-    const renderMainRoofMat = (attachName: string) => <meshStandardMaterial key={`roof-${config.roofColor}-${config.roofProfile}-${isRoofTile}-${isPir}`} attach={attachName} color={isRoofWood ? '#ffffff' : roofHex} map={isRoofTile ? undefined : roofTexToUse} normalMap={isRoofWood && !isRoofTile ? woodNormal : undefined} normalScale={isRoofWood && !isRoofTile ? new THREE.Vector2(0.48, 0.48) : undefined} bumpMap={isPir || isRoofTile ? undefined : roofProfileMap} bumpScale={0.12} roughness={isPir ? 0.65 : (isRoofWood ? 0.62 : 0.48)} metalness={isPir ? 0.15 : (isRoofWood ? 0.05 : 0.28)} envMapIntensity={0.85} side={THREE.DoubleSide} />;
+    const renderMainRoofMat = (attachName: string) => <meshStandardMaterial key={`${attachName}-roof-${config.roofColor}-${config.roofProfile}-${isRoofTile}-${isPir}`} attach={attachName} color={isRoofWood ? '#ffffff' : roofHex} map={isRoofTile ? undefined : roofTexToUse} normalMap={isRoofWood && !isRoofTile ? woodNormal : undefined} normalScale={isRoofWood && !isRoofTile ? new THREE.Vector2(0.48, 0.48) : undefined} bumpMap={isPir || isRoofTile ? undefined : roofProfileMap} bumpScale={0.12} roughness={isPir ? 0.65 : (isRoofWood ? 0.62 : 0.48)} metalness={isPir ? 0.15 : (isRoofWood ? 0.05 : 0.28)} envMapIntensity={0.85} side={THREE.DoubleSide} />;
 
     const gutterR = 0.035; const pipeR = 0.025;
     
@@ -776,7 +789,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       const overlap = 0.08; 
       const paneLen = (totalW/2 + oX) / Math.cos(roofTheta) + overlap;
       const liftY = (t/2) / Math.cos(roofTheta); 
-      const ridgeY = h + slopeH + liftY; 
+      const ridgeY = h + slopeH + liftY - roofContactOverlap; 
       const eavesY = h + liftY - Math.tan(roofTheta)*oX;
 
       return (
@@ -784,7 +797,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           <group rotation={[0, 0, roofTheta]}>
             <mesh position={[-(paneLen/2 - overlap/2), 0, 0]} castShadow receiveShadow>
               <boxGeometry args={[paneLen, t, rL]} />
-              {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{isPir ? renderMainRoofMat("material-3") : renderFasciaMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
+              {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{renderMainRoofMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
             </mesh>
             {isPir && <PirPanelJoints width={paneLen} height={rL} position={[-(paneLen/2 - overlap/2), t/2 + 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]} color={roofHex} />}
             {isRoofTile && <RoofTileRelief width={paneLen} depth={rL} slopeAxis="x" position={[-(paneLen/2 - overlap/2), t/2 + 0.002, 0]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofReliefTexture} normalTexture={isRoofWood ? woodNormal : undefined} />}
@@ -792,7 +805,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           <group rotation={[0, 0, -roofTheta]}>
             <mesh position={[(paneLen/2 - overlap/2), 0, 0]} castShadow receiveShadow>
               <boxGeometry args={[paneLen, t, rL]} />
-              {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{isPir ? renderMainRoofMat("material-3") : renderFasciaMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
+              {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{renderMainRoofMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
             </mesh>
             {isPir && <PirPanelJoints width={paneLen} height={rL} position={[(paneLen/2 - overlap/2), t/2 + 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]} color={roofHex} />}
             {isRoofTile && <RoofTileRelief width={paneLen} depth={rL} slopeAxis="x" position={[(paneLen/2 - overlap/2), t/2 + 0.002, 0]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofReliefTexture} normalTexture={isRoofWood ? woodNormal : undefined} />}
@@ -812,7 +825,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       const overlap = 0.08;
       const paneLen = (l / 2 + oZ) / Math.cos(roofTheta) + overlap;
       const liftY = (t / 2) / Math.cos(roofTheta);
-      const ridgeY = h + slopeH + liftY;
+      const ridgeY = h + slopeH + liftY - roofContactOverlap;
       const eavesY = h + liftY - Math.tan(roofTheta) * oZ;
 
       return (
@@ -820,7 +833,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           <group rotation={[roofTheta, 0, 0]}>
             <mesh position={[0, 0, paneLen / 2 - overlap / 2]} castShadow receiveShadow>
               <boxGeometry args={[rW, t, paneLen]} />
-              {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{isPir ? renderMainRoofMat("material-3") : renderFasciaMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
+              {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{renderMainRoofMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
             </mesh>
             {isPir && <PirPanelJoints width={rW} height={paneLen} position={[0, t / 2 + 0.002, paneLen / 2 - overlap / 2]} rotation={[-Math.PI / 2, 0, 0]} color={roofHex} />}
             {isRoofTile && <RoofTileRelief width={rW} depth={paneLen} slopeAxis="z" position={[0, t / 2 + 0.002, paneLen / 2 - overlap / 2]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofReliefTexture} normalTexture={isRoofWood ? woodNormal : undefined} />}
@@ -828,7 +841,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           <group rotation={[-roofTheta, 0, 0]}>
             <mesh position={[0, 0, -(paneLen / 2 - overlap / 2)]} castShadow receiveShadow>
               <boxGeometry args={[rW, t, paneLen]} />
-              {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{isPir ? renderMainRoofMat("material-3") : renderFasciaMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
+              {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{renderMainRoofMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
             </mesh>
             {isPir && <PirPanelJoints width={rW} height={paneLen} position={[0, t / 2 + 0.002, -(paneLen / 2 - overlap / 2)]} rotation={[-Math.PI / 2, 0, 0]} color={roofHex} />}
             {isRoofTile && <RoofTileRelief width={rW} depth={paneLen} slopeAxis="z" position={[0, t / 2 + 0.002, -(paneLen / 2 - overlap / 2)]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofReliefTexture} normalTexture={isRoofWood ? woodNormal : undefined} />}
@@ -866,7 +879,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
 
     const ridgeZ = isFront ? -l/2 - oZ : (isBack ? l/2 + oZ : 0);
     const ridgeX = isLeft ? maxX + oX : (isRight ? minX - oX : centerX);
-    const ridgeY = h + slopeH + liftY;
+    const ridgeY = getH(ridgeX, ridgeZ) + liftY - roofContactOverlap;
 
     const zShift = isFront ? paneLenZ/2 : (isBack ? -paneLenZ/2 : 0);
     const xShift = isLeft ? -paneLenX/2 : (isRight ? paneLenX/2 : 0);
@@ -876,7 +889,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
         <group position={[ridgeX, ridgeY, ridgeZ]} rotation={[roofRotX, 0, roofRotZ]}>
           <mesh position={[xShift, 0, zShift]} castShadow receiveShadow>
             <boxGeometry args={[paneLenX, t, paneLenZ]} />
-            {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{isPir ? renderMainRoofMat("material-3") : renderFasciaMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
+            {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{renderMainRoofMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
           </mesh>
           {isPir && <PirPanelJoints width={paneLenX} height={paneLenZ} position={[xShift, t/2 + 0.002, zShift]} rotation={[-Math.PI / 2, 0, 0]} color={roofHex} />}
           {isRoofTile && <RoofTileRelief width={paneLenX} depth={paneLenZ} slopeAxis={isFront || isBack ? 'z' : 'x'} position={[xShift, t/2 + 0.002, zShift]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofReliefTexture} normalTexture={isRoofWood ? woodNormal : undefined} />}
@@ -1015,7 +1028,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       <LightweightEnvironment intensity={0.72} />
       <color attach="background" args={['#dbe4ea']} />
       
-      <group name="garageModelGroup">
+      <group ref={materialRoot} name="garageModelGroup">
         {showCornerFlashings && (
           <>
             {renderCornerTrim(-w/2 + t/2, l/2 - t/2, getH(-w/2, l/2))}
