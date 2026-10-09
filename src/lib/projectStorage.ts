@@ -11,7 +11,6 @@ export function isGarageProjectConfig(value: unknown): value is GarageConfig {
   if (!value || typeof value !== 'object') return false;
   const c = value as Record<string, unknown>;
   if (!finiteBetween(c.width, 200, 3000) || !finiteBetween(c.length, 300, 3000) || !finiteBetween(c.height, 200, 350)) return false;
-  if (c.roofRiseCm !== undefined && !finiteBetween(c.roofRiseCm, 0.01, 1750)) return false;
   if (!roofs.includes(String(c.roofType)) || (c.buildingMaterial !== undefined && !['sheet','pir'].includes(String(c.buildingMaterial)))) return false;
   if (!colorFields.every(key => typeof c[key] === 'string' && (c[key] as string).length <= 100)) return false;
   if (!profileFields.every(key => profiles.includes(String(c[key])))) return false;

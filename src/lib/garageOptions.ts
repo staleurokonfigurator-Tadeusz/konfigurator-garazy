@@ -17,7 +17,14 @@ export function cleanUnavailableOptions(config: GarageConfig, addons: PricedAddo
     const addon = addons.find(item => item.id === id);
     return !addon || isAddonAvailable(config, addon);
   });
-  return extraOptions?.length === config.extraOptions?.length ? config : { ...config, extraOptions };
+  const normalized = extraOptions?.length === config.extraOptions?.length ? config : { ...config, extraOptions };
+  const obsolete = normalized as GarageConfig & { roofRiseCm?: unknown };
+  if ((normalized.buildingMaterial === 'pir' && !normalized.gutters) || 'roofRiseCm' in obsolete) {
+    const cleaned = { ...normalized, gutters: normalized.buildingMaterial === 'pir' || normalized.gutters };
+    delete (cleaned as GarageConfig & { roofRiseCm?: unknown }).roofRiseCm;
+    return cleaned;
+  }
+  return normalized;
 }
 
 // Move a resized gate to a valid position. If a centred neighbour prevents a

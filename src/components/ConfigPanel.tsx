@@ -5,7 +5,6 @@ import { Home, Maximize, PaintBucket, Plus, Trash2, BoxSelect, Layers, ChevronDo
 import { isAddonAvailable, cleanUnavailableOptions, updateGarageElement } from '@/lib/garageOptions';
 import { findValidPosition } from '@/lib/collision';
 import { v4 as uuidv4 } from 'uuid';
-import { isDualRoof, roofRiseCm, roofAngleDeg, roofRiseLimits, roofSpanCm, totalHeightCm, withRoofRise, withRoofAngle } from '@/lib/roofGeometry';
 import React, { useMemo, useState, Dispatch, SetStateAction } from 'react';
 import dynamic from 'next/dynamic';
 import { getTrustedParentOrigin, postCheckoutToWordPress, WORDPRESS_MESSAGE_VERSION } from '@/lib/wordpressBridge';
@@ -110,7 +109,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
       totalBase += carportArea * safeNum(pricing.integrated_carport_m2_v);
     }
 
-    if (config.gutters) {
+    if (config.gutters && !isPirGarage(config)) {
       let gutterMeters = 0;
       if (config.roofType === 'dual-slope') gutterMeters = (config.length / 100) * 2;
       else if (config.roofType === 'dual-slope-front-back') gutterMeters = (config.width / 100) * 2;
@@ -119,6 +118,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
       totalBase += gutterMeters * safeNum(pricing.gutter_v);
     }
 
+    let includedPirGateAvailable = isPirGarage(config);
     config.elements.forEach(el => {
       if (el.type === 'skylight') {
          totalBase += (el.width / 100) * safeNum(pricing.skylight_v);
@@ -129,21 +129,24 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         else if (el.width === 60 && el.height === 180) totalBase += safeNum(pricing.win_60x180);
       }
       if (el.type === 'gate') {
-        if (el.gateType === 'up-and-over') {
-          if (el.width === 200) totalBase += safeNum(pricing.gate_up_2x2);
-          else if (el.width === 300) totalBase += safeNum(pricing.gate_up_3x2);
-          else if (el.width === 400) totalBase += safeNum(pricing.gate_up_4x2);
-          else if (el.width === 500) totalBase += safeNum(pricing.gate_up_5x2);
-        } else if (el.gateType === 'sectional') {
-          if (el.width === 300) totalBase += safeNum(pricing.gate_sec_3x2);
-          else if (el.width === 400) totalBase += safeNum(pricing.gate_sec_4x2);
-          else if (el.width === 500) totalBase += safeNum(pricing.gate_sec_5x2);
-        } else if (el.gateType === 'swing') {
-          if (el.width === 200) totalBase += safeNum(pricing.gate_double_3x2) - 100; // orientacyjna cena bazowa
-          else if (el.width === 300) totalBase += safeNum(pricing.gate_double_3x2);
-          else if (el.width === 400) totalBase += safeNum(pricing.gate_double_4x2);
+        const includedGate = includedPirGateAvailable;
+        includedPirGateAvailable = false;
+        if (!includedGate) {
+          if (el.gateType === 'up-and-over') {
+            if (el.width === 200) totalBase += safeNum(pricing.gate_up_2x2);
+            else if (el.width === 300) totalBase += safeNum(pricing.gate_up_3x2);
+            else if (el.width === 400) totalBase += safeNum(pricing.gate_up_4x2);
+            else if (el.width === 500) totalBase += safeNum(pricing.gate_up_5x2);
+          } else if (el.gateType === 'sectional') {
+            if (el.width === 300) totalBase += safeNum(pricing.gate_sec_3x2);
+            else if (el.width === 400) totalBase += safeNum(pricing.gate_sec_4x2);
+            else if (el.width === 500) totalBase += safeNum(pricing.gate_sec_5x2);
+          } else if (el.gateType === 'swing') {
+            if (el.width === 200) totalBase += safeNum(pricing.gate_double_3x2) - 100; // orientacyjna cena bazowa
+            else if (el.width === 300) totalBase += safeNum(pricing.gate_double_3x2);
+            else if (el.width === 400) totalBase += safeNum(pricing.gate_double_4x2);
+          }
         }
-        
         if ((el as any).hasDoor) {
           totalBase += safeNum(pricing.door_in_gate_v);
         }
@@ -210,11 +213,6 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     if (isReadOnly) return;
     setConfig(prev => {
       const next = { ...prev, [key]: value };
-      if (key === 'height' && next.elements.some(el => el.y + el.height > next.height - 5)) return prev;
-      if (isOfferMode && prev.roofRiseCm !== undefined && isDualRoof(next)
-        && ['width','length','roofType','hasCarport','carportWidth'].includes(key)) {
-        next.roofRiseCm = withRoofAngle(next, roofAngleDeg(prev)).roofRiseCm;
-      }
       if (key === 'buildingMaterial' && value === 'pir') {
         next.extraOptions = (prev.extraOptions || []).filter(option => option !== 'roofTile');
       }
@@ -369,7 +367,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
       <Section title="Materiał ścian i dachu" icon={<Layers size={20} />}>
         <div className="grid grid-cols-2 gap-3">
           {([{ id: 'sheet', label: 'Standardowa blacha', detail: 'Cena według cennika' },
-            { id: 'pir', label: 'Płyta warstwowa PIR', detail: `${pirPricePerM2} zł / m² garażu` }] as const).map(material => (
+            { id: 'pir', label: 'Płyta warstwowa PIR', detail: `${pirPricePerM2} zł / m² garażu · orynnowanie i 1 brama w cenie` }] as const).map(material => (
             <button key={material.id} disabled={isReadOnly} aria-pressed={(isPir ? 'pir' : 'sheet') === material.id}
               onClick={() => updateConfig('buildingMaterial', material.id)}
               className={`rounded-xl border-2 p-3 text-left ${(isPir ? 'pir' : 'sheet') === material.id ? 'border-[var(--theme)] bg-zinc-50' : 'border-zinc-200 bg-white'} disabled:cursor-not-allowed`}>
@@ -413,7 +411,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
       <Section title="Wymiary Główne" icon={<Maximize size={20} />}>
         <div className="space-y-6">
-        {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: MAX_GARAGE_WIDTH_CM, step: 10 }, { label: 'Długość', key: 'length' as const, min: 300, max: MAX_GARAGE_LENGTH_CM, step: 10 }, { label: isOfferMode ? 'Wysokość ściany / okapu' : 'Wysokość', key: 'height' as const, min: 200, max: 350, step: 10 }].map(dim => (
+        {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: MAX_GARAGE_WIDTH_CM, step: 10 }, { label: 'Długość', key: 'length' as const, min: 300, max: MAX_GARAGE_LENGTH_CM, step: 10 }, { label: 'Wysokość', key: 'height' as const, min: 200, max: 350, step: 10 }].map(dim => (
             <div key={dim.key}>
               <div className="flex justify-between mb-2 text-sm font-semibold text-zinc-700"><label>{dim.label}</label><span className="bg-white px-2 py-1 rounded border text-[var(--theme)] font-bold">{config[dim.key]} cm</span></div>
               {!isReadOnly && <input type="range" min={dim.min} max={dim.max} step={dim.step} value={config[dim.key]} onChange={(e) => updateConfig(dim.key, Number(e.target.value))} className="w-full" style={{accentColor: 'var(--theme)'}} />}
@@ -421,39 +419,6 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
           ))}
         </div>
       </Section>
-
-      {isOfferMode && isDualRoof(config) && <Section title="Geometria dachu — wycena" icon={<Maximize size={20} />}>
-        <div className="space-y-4">
-          <label className="block text-sm font-semibold text-zinc-700">Wysokość szczytu ponad ścianą (cm)
-            <input aria-label="Wysokość szczytu ponad ścianą" type="number" disabled={isReadOnly}
-              min={roofRiseLimits(config).min} max={roofRiseLimits(config).max} step="any"
-              key={`rise-${roofRiseCm(config)}`} defaultValue={Number(roofRiseCm(config).toFixed(2))}
-              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-              onBlur={e => {
-                const next = e.target.value === '' ? config : withRoofRise(config, Number(e.target.value));
-                e.target.value = String(Number(roofRiseCm(next).toFixed(2)));
-                if (!isReadOnly && next !== config) setConfig(prev => withRoofRise(prev, roofRiseCm(next)));
-              }}
-              className="block w-full border border-zinc-300 rounded p-2 mt-1 bg-white text-zinc-900" />
-          </label>
-          <label className="block text-sm font-semibold text-zinc-700">Kąt spadku dachu (°)
-            <input aria-label="Kąt spadku dachu" type="number" disabled={isReadOnly} min={1} max={45} step="any"
-              key={`angle-${roofAngleDeg(config)}`} defaultValue={Number(roofAngleDeg(config).toFixed(2))}
-              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-              onBlur={e => {
-                const next = e.target.value === '' ? config : withRoofAngle(config, Number(e.target.value));
-                e.target.value = String(Number(roofAngleDeg(next).toFixed(2)));
-                if (!isReadOnly && next !== config) setConfig(prev => withRoofRise(prev, roofRiseCm(next)));
-              }}
-              className="block w-full border border-zinc-300 rounded p-2 mt-1 bg-white text-zinc-900" />
-          </label>
-          <p className="text-xs text-zinc-600">Wysokość całkowita: {Number(totalHeightCm(config).toFixed(2))} cm.
-            Rozpiętość dachu: {roofSpanCm(config)} cm. Zakres kąta: 1–45°;
-            szczytu: {roofRiseLimits(config).min.toFixed(2)}–{roofRiseLimits(config).max.toFixed(2)} cm.
-            Zmiana rozpiętości zachowuje ustawiony kąt. Obniżenie ściany kolidujące z otworem jest blokowane (5 cm zapasu).
-          </p>
-        </div>
-      </Section>}
 
       <Section title="Zintegrowana Wiata" icon={<Home size={20} />}>
         <div className="space-y-4">
@@ -470,9 +435,6 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                   hasCarport: enabled,
                   carportWidth: enabled ? (previous.carportWidth || 300) : previous.carportWidth,
                   carportSide: enabled ? (previous.carportSide || 'right') : previous.carportSide,
-                  ...(isOfferMode && previous.roofRiseCm !== undefined ? {
-                    roofRiseCm: withRoofAngle({...previous, hasCarport:enabled, carportWidth:previous.carportWidth || 300}, roofAngleDeg(previous)).roofRiseCm,
-                  } : {}),
                 }));
               }}
               className="w-5 h-5 rounded text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50"
@@ -539,7 +501,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
           <div key={gate.id} className={`bg-white p-4 rounded-xl border-2 transition-all shadow-sm relative group mb-3 ${activeDimId === gate.id ? 'border-[var(--theme)]' : 'border-zinc-200'}`}>
             <div className="flex justify-between items-center mb-4 pr-2">
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-zinc-800">Brama #{i+1} · {gate.wall === 'front' ? 'przód' : gate.wall === 'back' ? 'tył' : gate.wall === 'left' ? 'lewa ściana' : 'prawa ściana'}</h3>
+                <h3 className="font-bold text-zinc-800">Brama #{i+1} · {gate.wall === 'front' ? 'przód' : gate.wall === 'back' ? 'tył' : gate.wall === 'left' ? 'lewa ściana' : 'prawa ściana'}{isPir && i === 0 ? ' · w cenie PIR' : ''}</h3>
                 <button 
                   onClick={() => { setSelectedWall(gate.wall); setActiveDimId?.(activeDimId === gate.id ? null : gate.id); }} 
                   className={`p-1.5 rounded-lg transition-colors shadow-sm ${activeDimId === gate.id ? 'bg-[var(--theme)] text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-[var(--theme)]'}`} 
@@ -832,11 +794,11 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
           <label className={`flex items-center justify-between p-3 rounded-lg border border-zinc-200 hover:bg-zinc-50 transition-colors bg-white shadow-sm ${isReadOnly ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}>
             <div className="flex items-center gap-3">
-              <input type="checkbox" disabled={isReadOnly} checked={config.gutters} onChange={(e) => updateConfig('gutters', e.target.checked)} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
+              <input type="checkbox" disabled={isReadOnly || isPir} checked={isPir || config.gutters} onChange={(e) => updateConfig('gutters', e.target.checked)} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
               <span className="text-sm font-semibold text-zinc-700">Rynny i rury spustowe</span>
             </div>
             <span className="text-xs font-bold text-[var(--theme)] bg-[var(--theme)]/10 px-2 py-1 rounded">
-              +{Math.round((config.roofType === 'dual-slope' ? (config.length / 100) * 2 : config.roofType === 'dual-slope-front-back' ? (config.width / 100) * 2 : (config.roofType === 'slope-back' || config.roofType === 'slope-front' ? (config.width / 100) : (config.length / 100))) * safeNum(pricing.gutter_v))} zł
+              {isPir ? 'W cenie PIR' : <>+{Math.round((config.roofType === 'dual-slope' ? (config.length / 100) * 2 : config.roofType === 'dual-slope-front-back' ? (config.width / 100) * 2 : (config.roofType === 'slope-back' || config.roofType === 'slope-front' ? (config.width / 100) : (config.length / 100))) * safeNum(pricing.gutter_v))} zł</>}
             </span>
           </label>
 

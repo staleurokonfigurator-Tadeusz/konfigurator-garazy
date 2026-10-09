@@ -26,7 +26,6 @@ export interface GarageConfig {
   length: number;
   height: number;
   roofType: RoofType;
-  roofRiseCm?: number; // Optional offer setting; legacy roof rise is 40 cm.
   gutters: boolean;
   elements: GarageElement[];
   extraOptions?: string[];

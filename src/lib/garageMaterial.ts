@@ -1,4 +1,3 @@
-import { totalHeightCm } from './roofGeometry';
 import type { GarageConfig, WallFace } from '@/types';
 
 export const DEFAULT_PIR_PRICE_PER_M2 = 1300;
@@ -17,8 +16,8 @@ export function getGarageCameraDistance(config: GarageConfig, wall: WallFace, as
   const width = config.width / 100 + (config.hasCarport ? (config.carportWidth || 300) / 100 : 0);
   const length = config.length / 100;
   const previousDistance = Math.max(width, length) + 4;
-  if (config.width <= 800 && config.length <= 1000 && config.roofRiseCm === undefined) return previousDistance;
+  if (config.width <= 800 && config.length <= 1000) return previousDistance;
   const span = wall === 'front' || wall === 'back' ? width : length;
   const halfFovTangent = Math.tan(50 * Math.PI / 360);
-  return Math.max(previousDistance, (totalHeightCm(config) / 100 + 1) * 1.1 / (2 * halfFovTangent), (span + 1) * 1.1 / (2 * halfFovTangent * Math.max(aspect, 0.1)));
+  return Math.max(previousDistance, (span + 1) * 1.1 / (2 * halfFovTangent * Math.max(aspect, 0.1)));
 }

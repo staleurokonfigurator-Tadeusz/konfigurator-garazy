@@ -12,31 +12,7 @@ function load(file) {
   new Function('exports','require',compile(fs.readFileSync(path.join(root,file),'utf8')))(exports,require);
   return exports;
 }
-const roof = load('src/lib/roofGeometry.ts');
 const clipping = load('src/lib/profileClipping.ts');
-const base = {width:300,length:500,height:210,roofType:'dual-slope'};
-const close = (a,b) => assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
-test('legacy rise and symmetric roof formulas round trip without rounding drift',()=>{
-  assert.equal(roof.roofRiseCm(base),40);
-  for (const angle of [1,15,20,45]) {
-    const config = roof.withRoofAngle(base,angle);
-    close(config.roofRiseCm,150*Math.tan(angle*Math.PI/180));
-    close(roof.roofAngleDeg(config),angle);
-    close(roof.totalHeightCm(config),210+config.roofRiseCm);
-    close(roof.roofAngleDeg(roof.withRoofRise(base,config.roofRiseCm)),angle);
-  }
-});
-test('roof orientation, integrated carport, 30m span and invalid values',()=>{
-  for (const config of [base,{...base,roofType:'dual-slope-front-back'}, {...base,hasCarport:true,carportWidth:300}, {...base,width:3000,length:3000}]) {
-    const half = roof.roofSpanCm(config)/2;
-    close(roof.withRoofAngle(config,90).roofRiseCm,half);
-    close(roof.withRoofRise(config,-50).roofRiseCm,half*Math.tan(Math.PI/180));
-    assert.equal(roof.withRoofAngle(config,NaN),config);
-    assert.equal(roof.withRoofRise(config,Infinity),config);
-  }
-  assert.equal(roof.roofSpanCm({...base,roofType:'dual-slope-front-back',hasCarport:true,carportWidth:300}),500);
-  assert.equal(roof.roofRiseCm({...base,roofType:'slope-back',roofRiseCm:120}),40);
-});
 const model = fs.readFileSync(path.join(root,'src/components/GarageModel.tsx'),'utf8');
 const ast = ts.createSourceFile('GarageModel.tsx',model,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 const names = ['getProfileReliefSpec','subtractRange','createProfileReliefGeometry'];

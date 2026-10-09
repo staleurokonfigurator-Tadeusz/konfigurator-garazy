@@ -1,4 +1,3 @@
-import { roofRiseCm, roofAngleDeg, totalHeightCm, isDualRoof } from './roofGeometry';
 import type { GarageConfig, GarageElement, WallFace } from '@/types';
 import {
   PDF_FONT, PDF_INK, PDF_MUTED, PDF_BOTTOM,
@@ -197,18 +196,17 @@ function drawElevationPlan(
   const integratedCarportWidthCm = getCarportWidthCm(config);
   const carportWidthCm = isFrontBack ? integratedCarportWidthCm : 0;
   const drawingWidthCm = wallWidthCm + carportWidthCm;
-  const scale = Math.min(maxWidth / drawingWidthCm, maxHeight / (isDualRoof(config) ? totalHeightCm(config) : config.height));
+  const scale = Math.min(maxWidth / drawingWidthCm, maxHeight / config.height);
   const width = drawingWidthCm * scale;
   const garageWidth = wallWidthCm * scale;
   const carportWidth = carportWidthCm * scale;
   const garageX = carportWidth > 0 && config.carportSide === 'left' ? x + carportWidth : x;
   const carportX = config.carportSide === 'left' ? x : garageX + garageWidth;
   const wallHeight = config.height * scale;
-  if (isDualRoof(config)) y += roofRiseCm(config) * scale;
   const isDualLeftRight = config.roofType === 'dual-slope';
   const isDualFrontBack = config.roofType === 'dual-slope-front-back';
   const isDual = isDualLeftRight || isDualFrontBack;
-  const roofRise = isDual ? roofRiseCm(config) * scale : Math.min(10, width * 0.1);
+  const roofRise = isDual ? Math.min(16, width * 0.16) : Math.min(10, width * 0.1);
   const slopesAcrossThisWall = ((wall === 'front' || wall === 'back') && (config.roofType === 'slope-left' || config.roofType === 'slope-right'))
     || ((wall === 'left' || wall === 'right') && (config.roofType === 'slope-front' || config.roofType === 'slope-back'));
   const highOnLeft = (config.roofType === 'slope-right' && wall === 'front')
@@ -537,7 +535,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     ['Dach - kolor', color(config.roofColor)],
     ['Bramy - wykończenie', `${profileLabel(config.gateProfile)}\nKolor: ${color(config.gateColor)}`],
     ['Drzwi / okna - kolory', `Drzwi: ${color(config.doorColor)}\nOkna: ${color(config.windowColor)}`],
-    ['Rynny i rury spustowe', config.gutters ? `Tak / ${color(config.gutterColor)}` : 'Nie'],
+    ['Rynny i rury spustowe', config.buildingMaterial === 'pir' ? `Tak, w cenie PIR / ${color(config.gutterColor)}` : config.gutters ? `Tak / ${color(config.gutterColor)}` : 'Nie'],
     ['Obróbki narożne', config.extraOptions?.includes('cornerFlashings') ? `Tak / ${color(config.cornerFlashingColor)}` : 'Nie'],
     ['Obróbki dachu', config.extraOptions?.includes('roofFlashings') ? `Tak / ${color(config.roofFlashingColor)}` : 'Nie'],
     ['Wiata zintegrowana', carportWidth > 0 ? `Szerokość ${carportWidth} cm / strona ${config.carportSide === 'left' ? 'lewa' : 'prawa'}\nZabudowa: ${carportWalls || 'bez zabudowy'}` : 'Nie'],
@@ -551,7 +549,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     const rows = config.elements.map((element, index) => {
       const width = element.wall === 'front' || element.wall === 'back' ? config.width : config.length;
       const left = Math.max(0, Math.min(width - element.width, width / 2 + element.x - element.width / 2));
-      return [String(index + 1).padStart(2, '0'), elementDescription(element), faceNames[element.wall],
+      return [String(index + 1).padStart(2, '0'), elementDescription(element) + (config.buildingMaterial === 'pir' && element === config.elements.find(item => item.type === 'gate') ? ' / W cenie PIR' : ''), faceNames[element.wall],
         `${element.width} x ${element.height} cm`, `L: ${Math.round(left)} cm\nP: ${Math.round(element.y)} cm`];
     });
     specY = layout.table(['LP.', 'ELEMENT / WARIANT', 'ŚCIANA', 'SZER. x WYS.', 'POŁOŻENIE'], rows, [12, 60, 23, 38, 45], specY, 'Elementy - ciąg dalszy');
@@ -575,10 +573,6 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   drawTechnicalLegend(doc, 202);
   layout.font(10, true);
   doc.text(`Wysokość ścian: ${config.height} cm`, 16, 240);
-  if (isDualRoof(config)) {
-    layout.font(8, false, PDF_MUTED);
-    doc.text(`Szczyt: ${roofRiseCm(config).toFixed(2)} cm | Kąt: ${roofAngleDeg(config).toFixed(2)}° | Całkowita: ${totalHeightCm(config).toFixed(2)} cm`, 16, 245);
-  }
   layout.font(9, false, PDF_MUTED);
   doc.text(carportWidth > 0 ? `Łączna szerokość garażu z wiatą: ${config.width + carportWidth} cm.` : `Powierzchnia garażu: ${(config.width * config.length / 10000).toLocaleString('pl-PL')} m².`, 16, 250);
   layout.font(7.5, false, PDF_MUTED);

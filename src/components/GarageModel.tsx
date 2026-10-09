@@ -9,7 +9,6 @@ import { useTexture } from '@react-three/drei';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import LightweightEnvironment from './LightweightEnvironment';
 import PirPanelJoints from './PirPanelJoints';
-import { roofRiseCm } from '@/lib/roofGeometry';
 import { clipProfilePolygon, applyWallUV, type ProfilePoint } from '@/lib/profileClipping';
 import { isPirGarage } from '@/lib/garageMaterial';
 
@@ -479,7 +478,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
   const isPir = isPirGarage(config);
   // Representative panel thickness in the preview; external dimensions stay unchanged.
   const t = isPir ? 0.10 : 0.05;
-  const slopeH = roofRiseCm(config) / 100;
+  const slopeH = 0.4;
   const roofContactOverlap = 0.005;
   const materialRoot = useRef<THREE.Group>(null);
   const invalidate = useThree(state => state.invalidate); 
@@ -536,7 +535,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     });
   }, [config, colors, loadedTextures]);
 
-  const showGutters = config.gutters || (config.extraOptions || []).some(id => id.toLowerCase().includes('rynn'));
+  const showGutters = isPir || config.gutters || (config.extraOptions || []).some(id => id.toLowerCase().includes('rynn'));
   const showCornerFlashings = (config.extraOptions || []).includes('cornerFlashings');
   const showRoofFlashings = (config.extraOptions || []).includes('roofFlashings');
   const isRoofTile = !isPir && (config.extraOptions || []).includes('roofTile');

@@ -52,11 +52,32 @@ test('PIR replaces the sheet base rate for every roof and defaults to 1300 PLN/m
 test('30 x 30 m uses 900 m2; equipment, height and perimeter surcharges still work', () => {
   const large = {...base,width:3000,length:3000,buildingMaterial:'pir'};
   assert.equal(price(large),1170000);
-  assert.equal(price({...large,gutters:true}),1170600);
+  assert.equal(price({...large,gutters:true}),1170000);
   assert.equal(price({...base,buildingMaterial:'pir',height:220}),21450);
-  assert.equal(price({...base,buildingMaterial:'pir',elements:[{type:'gate',gateType:'up-and-over',width:200,height:200}]}),20300);
+  assert.equal(price({...base,buildingMaterial:'pir',elements:[{type:'gate',gateType:'up-and-over',width:200,height:200}]}),19500);
   assert.equal(price({...large,extraOptions:['perimeter']},pricing,[{id:'perimeter',type:'mb',price:2}]),1170240);
   assert.equal(price({...base,buildingMaterial:'pir',hasCarport:true,carportWidth:300}),21000);
+});
+
+test('PIR includes exactly one gate of any offered type; extra gates and equipment remain charged', () => {
+  const rates={...pricing,gate_sec_3x2:2200,gate_double_3x2:1500,door_in_gate_v:250};
+  const gates=[{type:'gate',gateType:'up-and-over',width:200,height:200},
+    {type:'gate',gateType:'sectional',width:300,height:200},
+    {type:'gate',gateType:'swing',width:300,height:200}];
+  for(const gate of gates) {
+    assert.equal(price({...base,buildingMaterial:'pir',gutters:true,elements:[gate]},rates),19500);
+  }
+  assert.equal(price({...base,buildingMaterial:'pir',elements:[{type:'window',width:80,height:60},...gates]},rates),23200);
+  assert.equal(price({...base,buildingMaterial:'pir',elements:[{...gates[0],hasDoor:true},gates[0]]},rates),20550);
+  assert.equal(price({...base,elements:[gates[0]],gutters:true},rates),3900);
+  assert.equal(price({...base,buildingMaterial:'pir',elements:[gates[1]],extraOptions:['motor']},rates,[{id:'motor',label:'Automat',type:'fixed',price:500}]),20000);
+});
+
+test('restored PIR projects include gutters and ignore withdrawn roof settings', () => {
+  const normalized=options.cleanUnavailableOptions({...base,buildingMaterial:'pir',roofRiseCm:120},[]);
+  assert.equal(normalized.gutters,true);
+  assert.equal('roofRiseCm' in normalized,false);
+  assert.equal(options.cleanUnavailableOptions(base,[]),base);
 });
 test('incompatible roof tile option in restored PIR configs is not charged', () => {
   assert.equal(price({...base,buildingMaterial:'pir',extraOptions:['roofTile']}),19500);
