@@ -1,3 +1,4 @@
+import { roofRiseCm, roofAngleDeg, totalHeightCm, isDualRoof } from './roofGeometry';
 import type { GarageConfig, GarageElement, WallFace } from '@/types';
 import {
   PDF_FONT, PDF_INK, PDF_MUTED, PDF_BOTTOM,
@@ -196,17 +197,18 @@ function drawElevationPlan(
   const integratedCarportWidthCm = getCarportWidthCm(config);
   const carportWidthCm = isFrontBack ? integratedCarportWidthCm : 0;
   const drawingWidthCm = wallWidthCm + carportWidthCm;
-  const scale = Math.min(maxWidth / drawingWidthCm, maxHeight / config.height);
+  const scale = Math.min(maxWidth / drawingWidthCm, maxHeight / (isDualRoof(config) ? totalHeightCm(config) : config.height));
   const width = drawingWidthCm * scale;
   const garageWidth = wallWidthCm * scale;
   const carportWidth = carportWidthCm * scale;
   const garageX = carportWidth > 0 && config.carportSide === 'left' ? x + carportWidth : x;
   const carportX = config.carportSide === 'left' ? x : garageX + garageWidth;
   const wallHeight = config.height * scale;
+  if (isDualRoof(config)) y += roofRiseCm(config) * scale;
   const isDualLeftRight = config.roofType === 'dual-slope';
   const isDualFrontBack = config.roofType === 'dual-slope-front-back';
   const isDual = isDualLeftRight || isDualFrontBack;
-  const roofRise = isDual ? Math.min(16, width * 0.16) : Math.min(10, width * 0.1);
+  const roofRise = isDual ? roofRiseCm(config) * scale : Math.min(10, width * 0.1);
   const slopesAcrossThisWall = ((wall === 'front' || wall === 'back') && (config.roofType === 'slope-left' || config.roofType === 'slope-right'))
     || ((wall === 'left' || wall === 'right') && (config.roofType === 'slope-front' || config.roofType === 'slope-back'));
   const highOnLeft = (config.roofType === 'slope-right' && wall === 'front')
@@ -573,6 +575,10 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   drawTechnicalLegend(doc, 202);
   layout.font(10, true);
   doc.text(`Wysokość ścian: ${config.height} cm`, 16, 240);
+  if (isDualRoof(config)) {
+    layout.font(8, false, PDF_MUTED);
+    doc.text(`Szczyt: ${roofRiseCm(config).toFixed(2)} cm | Kąt: ${roofAngleDeg(config).toFixed(2)}° | Całkowita: ${totalHeightCm(config).toFixed(2)} cm`, 16, 245);
+  }
   layout.font(9, false, PDF_MUTED);
   doc.text(carportWidth > 0 ? `Łączna szerokość garażu z wiatą: ${config.width + carportWidth} cm.` : `Powierzchnia garażu: ${(config.width * config.length / 10000).toLocaleString('pl-PL')} m².`, 16, 250);
   layout.font(7.5, false, PDF_MUTED);

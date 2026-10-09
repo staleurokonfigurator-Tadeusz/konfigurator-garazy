@@ -9,6 +9,8 @@ import { useTexture } from '@react-three/drei';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import LightweightEnvironment from './LightweightEnvironment';
 import PirPanelJoints from './PirPanelJoints';
+import { roofRiseCm } from '@/lib/roofGeometry';
+import { clipProfilePolygon, applyWallUV, type ProfilePoint } from '@/lib/profileClipping';
 import { isPirGarage } from '@/lib/garageMaterial';
 
 interface GarageModelProps {
@@ -103,6 +105,8 @@ function createProfileReliefGeometry(
   profile: SheetProfile,
   openings: ProfileOpening[],
   depthDirection: 1 | -1,
+  outline?: ProfilePoint[],
+  uvOffset?: [number, number],
 ) {
   const spec = getProfileReliefSpec(profile);
   const isHorizontal = profile.startsWith('poziome');
@@ -117,14 +121,26 @@ function createProfileReliefGeometry(
     depth: number,
   ) => {
     if (partWidth <= 0.008 || partHeight <= 0.008) return;
-    const geometry = new THREE.BoxGeometry(partWidth, partHeight, depth);
-    geometry.translate(x, y, depthDirection * depth / 2);
+    let geometry: THREE.BufferGeometry;
+    if (outline) {
+      const points = clipProfilePolygon([[x-partWidth/2,y-partHeight/2],[x+partWidth/2,y-partHeight/2],[x+partWidth/2,y+partHeight/2],[x-partWidth/2,y+partHeight/2]], outline);
+      if (points.length < 3) return;
+      const shape = new THREE.Shape(points.map(([px,py]) => new THREE.Vector2(px,py)));
+      geometry = new THREE.ExtrudeGeometry(shape, {depth, bevelEnabled:false});
+      if (depthDirection === -1) geometry.translate(0,0,-depth);
+    } else {
+      geometry = new THREE.BoxGeometry(partWidth, partHeight, depth);
+      geometry.translate(x, y, depthDirection * depth / 2);
+    }
+    if (uvOffset) applyWallUV(geometry, uvOffset[0], uvOffset[1]);
     parts.push(geometry);
   };
 
   if (isHorizontal) {
-    const count = Math.max(1, Math.floor(height / spec.spacing) + 1);
-    const startY = -((count - 1) * spec.spacing) / 2;
+    const baseCount = Math.max(1, Math.floor(height / spec.spacing) + 1);
+    const top = outline ? Math.max(...outline.map(p => p[1])) : height / 2;
+    const count = baseCount + Math.max(0, Math.ceil((top - height / 2) / spec.spacing));
+    const startY = -((baseCount - 1) * spec.spacing) / 2;
     for (let index = 0; index < count; index += 1) {
       const y = startY + index * spec.spacing;
       let ranges: Array<[number, number]> = [[-width / 2, width / 2]];
@@ -151,7 +167,7 @@ function createProfileReliefGeometry(
     const startX = -((count - 1) * spec.spacing) / 2;
     for (let index = 0; index < count; index += 1) {
       const x = startX + index * spec.spacing;
-      let ranges: Array<[number, number]> = [[-height / 2, height / 2]];
+      let ranges: Array<[number, number]> = [[-height / 2, outline ? Math.max(...outline.map(p => p[1])) : height / 2]];
       openings.forEach((opening) => {
         const crossesOpening = Math.abs(x - opening.x) <= opening.width / 2 + spec.shoulderWidth / 2 + clearance;
         if (crossesOpening) {
@@ -189,6 +205,8 @@ function ProfileReliefSurface({
   colorMap,
   normalMap,
   isWood,
+  outline,
+  uvOffset,
 }: {
   width: number;
   height: number;
@@ -200,12 +218,18 @@ function ProfileReliefSurface({
   colorMap?: THREE.Texture;
   normalMap?: THREE.Texture;
   isWood: boolean;
+  outline?: ProfilePoint[];
+  uvOffset?: [number, number];
 }) {
   const openingsKey = JSON.stringify(openings);
   const normalizedOpenings = useMemo<ProfileOpening[]>(() => JSON.parse(openingsKey), [openingsKey]);
+  const outlineKey = JSON.stringify(outline);
+  const stableOutline = useMemo<ProfilePoint[] | undefined>(() => outlineKey ? JSON.parse(outlineKey) : undefined, [outlineKey]);
+  const offsetX = uvOffset?.[0], offsetY = uvOffset?.[1];
   const geometry = useMemo(
-    () => createProfileReliefGeometry(width, height, profile, normalizedOpenings, depthDirection),
-    [width, height, profile, normalizedOpenings, depthDirection],
+    () => createProfileReliefGeometry(width, height, profile, normalizedOpenings, depthDirection, stableOutline,
+      offsetX === undefined || offsetY === undefined ? undefined : [offsetX, offsetY]),
+    [width, height, profile, normalizedOpenings, depthDirection, stableOutline, offsetX, offsetY],
   );
 
   useEffect(() => () => geometry.dispose(), [geometry]);
@@ -455,7 +479,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
   const isPir = isPirGarage(config);
   // Representative panel thickness in the preview; external dimensions stay unchanged.
   const t = isPir ? 0.10 : 0.05;
-  const slopeH = 0.4;
+  const slopeH = roofRiseCm(config) / 100;
   const roofContactOverlap = 0.005;
   const materialRoot = useRef<THREE.Group>(null);
   const invalidate = useThree(state => state.invalidate); 
@@ -679,6 +703,10 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     const profile = (config.wallProfile || 'pionowe-t7') as SheetProfile;
     const depthDirection: 1 | -1 = isLeftWall ? -1 : 1;
     const surfaceZ = isLeftWall ? -0.002 : t + 0.002;
+    const shape = isSide ? createGarageSideShape(wall === 'right')
+      : wall === 'back' ? createGarageBackShape() : createGarageFrontShape();
+    const outline: ProfilePoint[] = shape.getPoints().map(p => [p.x - (isSide ? l/2 : 0), p.y - h/2]);
+    if (outline.length > 1) outline.pop();
 
     return (
       <group position={pos} rotation={[0, rotY, 0]}>
@@ -694,6 +722,8 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           profile={profile}
           openings={getProfileOpenings(wall, isSide, isLeftWall)}
           depthDirection={depthDirection}
+          outline={outline}
+          uvOffset={[isSide ? l / 2 : 0, h / 2]}
           position={[isSide ? l / 2 : 0, h / 2, surfaceZ]}
           color={wallHex}
           colorMap={activeWallColorMap}

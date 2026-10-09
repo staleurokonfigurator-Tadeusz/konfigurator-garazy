@@ -3,6 +3,7 @@
 import { Canvas, useThree } from '@react-three/fiber';
 import { CameraControls, ContactShadows, Edges, Html, Line, useTexture } from '@react-three/drei';
 import { GarageConfig, WallFace } from '@/types';
+import { totalHeightCm } from '@/lib/roofGeometry';
 import GarageModel from './GarageModel';
 import { Suspense, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
@@ -23,11 +24,13 @@ function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFa
   const size = useThree(state => state.size);
   const distance = getGarageCameraDistance(config, selectedWall, size.width / Math.max(size.height, 1));
 
+  const cameraHeight = (config.roofRiseCm === undefined ? config.height : totalHeightCm(config)) * 0.01;
+
   useEffect(() => {
     if (!controlsRef.current) return;
     const w = config.width * 0.01; 
     const l = config.length * 0.01; 
-    const h = config.height * 0.01;
+    const h = cameraHeight;
     
     let sceneCenterX = 0;
     if (config.hasCarport && config.carportWidth) {
@@ -51,7 +54,7 @@ function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFa
       case 'right': targetX = w / 2; camX = w / 2 + dist * zoomMultiplier; break;
     }
     controlsRef.current.setLookAt(camX, h / 2, camZ, targetX, h / 2, targetZ, true);
-  }, [selectedWall, config.width, config.length, config.height, activeDimId, config.hasCarport, config.carportWidth, config.carportSide, distance]);
+  }, [selectedWall, config.width, config.length, cameraHeight, activeDimId, config.hasCarport, config.carportWidth, config.carportSide, distance]);
 
   return <CameraControls ref={controlsRef} minPolarAngle={Math.PI / 8} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={2} maxDistance={Math.max(25, distance * 1.5)} makeDefault />;
 }
@@ -225,9 +228,10 @@ export default function CanvasArea({ config, selectedWall, activeDimId, colors =
     width: config.width,
     length: config.length,
     height: config.height,
+    roof: [config.roofType, config.roofRiseCm],
     carport: [config.hasCarport, config.carportWidth, config.carportSide],
     elements: config.elements,
-  }), [config.width, config.length, config.height, config.hasCarport, config.carportWidth, config.carportSide, config.elements]);
+  }), [config.width, config.length, config.height, config.roofType, config.roofRiseCm, config.hasCarport, config.carportWidth, config.carportSide, config.elements]);
 
   return (
     <Canvas

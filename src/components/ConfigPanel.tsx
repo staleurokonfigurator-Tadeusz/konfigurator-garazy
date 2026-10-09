@@ -5,6 +5,7 @@ import { Home, Maximize, PaintBucket, Plus, Trash2, BoxSelect, Layers, ChevronDo
 import { isAddonAvailable, cleanUnavailableOptions, updateGarageElement } from '@/lib/garageOptions';
 import { findValidPosition } from '@/lib/collision';
 import { v4 as uuidv4 } from 'uuid';
+import { isDualRoof, roofRiseCm, roofAngleDeg, roofRiseLimits, roofSpanCm, totalHeightCm, withRoofRise, withRoofAngle } from '@/lib/roofGeometry';
 import React, { useMemo, useState, Dispatch, SetStateAction } from 'react';
 import dynamic from 'next/dynamic';
 import { getTrustedParentOrigin, postCheckoutToWordPress, WORDPRESS_MESSAGE_VERSION } from '@/lib/wordpressBridge';
@@ -209,6 +210,11 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     if (isReadOnly) return;
     setConfig(prev => {
       const next = { ...prev, [key]: value };
+      if (key === 'height' && next.elements.some(el => el.y + el.height > next.height - 5)) return prev;
+      if (isOfferMode && prev.roofRiseCm !== undefined && isDualRoof(next)
+        && ['width','length','roofType','hasCarport','carportWidth'].includes(key)) {
+        next.roofRiseCm = withRoofAngle(next, roofAngleDeg(prev)).roofRiseCm;
+      }
       if (key === 'buildingMaterial' && value === 'pir') {
         next.extraOptions = (prev.extraOptions || []).filter(option => option !== 'roofTile');
       }
@@ -407,7 +413,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
       <Section title="Wymiary Główne" icon={<Maximize size={20} />}>
         <div className="space-y-6">
-        {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: MAX_GARAGE_WIDTH_CM, step: 10 }, { label: 'Długość', key: 'length' as const, min: 300, max: MAX_GARAGE_LENGTH_CM, step: 10 }, { label: 'Wysokość', key: 'height' as const, min: 200, max: 350, step: 10 }].map(dim => (
+        {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: MAX_GARAGE_WIDTH_CM, step: 10 }, { label: 'Długość', key: 'length' as const, min: 300, max: MAX_GARAGE_LENGTH_CM, step: 10 }, { label: isOfferMode ? 'Wysokość ściany / okapu' : 'Wysokość', key: 'height' as const, min: 200, max: 350, step: 10 }].map(dim => (
             <div key={dim.key}>
               <div className="flex justify-between mb-2 text-sm font-semibold text-zinc-700"><label>{dim.label}</label><span className="bg-white px-2 py-1 rounded border text-[var(--theme)] font-bold">{config[dim.key]} cm</span></div>
               {!isReadOnly && <input type="range" min={dim.min} max={dim.max} step={dim.step} value={config[dim.key]} onChange={(e) => updateConfig(dim.key, Number(e.target.value))} className="w-full" style={{accentColor: 'var(--theme)'}} />}
@@ -415,6 +421,39 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
           ))}
         </div>
       </Section>
+
+      {isOfferMode && isDualRoof(config) && <Section title="Geometria dachu — wycena" icon={<Maximize size={20} />}>
+        <div className="space-y-4">
+          <label className="block text-sm font-semibold">Wysokość szczytu ponad ścianą (cm)
+            <input aria-label="Wysokość szczytu ponad ścianą" type="number" disabled={isReadOnly}
+              min={roofRiseLimits(config).min} max={roofRiseLimits(config).max} step="any"
+              key={`rise-${roofRiseCm(config)}`} defaultValue={Number(roofRiseCm(config).toFixed(2))}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+              onBlur={e => {
+                const next = e.target.value === '' ? config : withRoofRise(config, Number(e.target.value));
+                e.target.value = String(Number(roofRiseCm(next).toFixed(2)));
+                if (!isReadOnly && next !== config) setConfig(prev => withRoofRise(prev, roofRiseCm(next)));
+              }}
+              className="block w-full border rounded p-2 mt-1" />
+          </label>
+          <label className="block text-sm font-semibold">Kąt spadku dachu (°)
+            <input aria-label="Kąt spadku dachu" type="number" disabled={isReadOnly} min={1} max={45} step="any"
+              key={`angle-${roofAngleDeg(config)}`} defaultValue={Number(roofAngleDeg(config).toFixed(2))}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+              onBlur={e => {
+                const next = e.target.value === '' ? config : withRoofAngle(config, Number(e.target.value));
+                e.target.value = String(Number(roofAngleDeg(next).toFixed(2)));
+                if (!isReadOnly && next !== config) setConfig(prev => withRoofRise(prev, roofRiseCm(next)));
+              }}
+              className="block w-full border rounded p-2 mt-1" />
+          </label>
+          <p className="text-xs text-zinc-600">Wysokość całkowita: {Number(totalHeightCm(config).toFixed(2))} cm.
+            Rozpiętość dachu: {roofSpanCm(config)} cm. Zakres kąta: 1–45°;
+            szczytu: {roofRiseLimits(config).min.toFixed(2)}–{roofRiseLimits(config).max.toFixed(2)} cm.
+            Zmiana rozpiętości zachowuje ustawiony kąt. Obniżenie ściany kolidujące z otworem jest blokowane (5 cm zapasu).
+          </p>
+        </div>
+      </Section>}
 
       <Section title="Zintegrowana Wiata" icon={<Home size={20} />}>
         <div className="space-y-4">
@@ -431,6 +470,9 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                   hasCarport: enabled,
                   carportWidth: enabled ? (previous.carportWidth || 300) : previous.carportWidth,
                   carportSide: enabled ? (previous.carportSide || 'right') : previous.carportSide,
+                  ...(isOfferMode && previous.roofRiseCm !== undefined ? {
+                    roofRiseCm: withRoofAngle({...previous, hasCarport:enabled, carportWidth:previous.carportWidth || 300}, roofAngleDeg(previous)).roofRiseCm,
+                  } : {}),
                 }));
               }}
               className="w-5 h-5 rounded text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50"
