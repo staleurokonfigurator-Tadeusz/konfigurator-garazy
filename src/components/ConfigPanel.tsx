@@ -371,12 +371,12 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
             <button key={material.id} disabled={isReadOnly} aria-pressed={(isPir ? 'pir' : 'sheet') === material.id}
               onClick={() => updateConfig('buildingMaterial', material.id)}
               className={`rounded-xl border-2 p-3 text-left ${(isPir ? 'pir' : 'sheet') === material.id ? 'border-[var(--theme)] bg-zinc-50' : 'border-zinc-200 bg-white'} disabled:cursor-not-allowed`}>
-              <span className="block text-sm font-bold">{material.label}</span>
+              <span className="block text-sm font-bold text-zinc-900">{material.label}</span>
               <span className="mt-1 block text-xs text-zinc-500">{material.detail}</span>
             </button>
           ))}
         </div>
-        {isPir && <p className="mt-3 text-xs text-zinc-600">PIR obejmuje ściany i dach. Cena podstawowa za powierzchnię szerokość × długość; dopłaty za wysokość i wyposażenie według cennika. Bramy, drzwi i okna wybierasz osobno.</p>}
+        {isPir && <p className="mt-3 text-xs text-zinc-600">Cena PIR za powierzchnię szerokość × długość obejmuje ściany, dach, orynnowanie i jedną bramę. Kolejne bramy, dodatki i dopłaty za wysokość według cennika.</p>}
       </Section>
       <Section title="Wybierz Typ Garażu" icon={<Home size={20} />}>
         <div className="grid grid-cols-2 gap-3">
@@ -501,7 +501,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
           <div key={gate.id} className={`bg-white p-4 rounded-xl border-2 transition-all shadow-sm relative group mb-3 ${activeDimId === gate.id ? 'border-[var(--theme)]' : 'border-zinc-200'}`}>
             <div className="flex justify-between items-center mb-4 pr-2">
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-zinc-800">Brama #{i+1} · {gate.wall === 'front' ? 'przód' : gate.wall === 'back' ? 'tył' : gate.wall === 'left' ? 'lewa ściana' : 'prawa ściana'}{isPir && i === 0 ? ' · w cenie PIR' : ''}</h3>
+                <h3 className="font-bold text-zinc-800">Brama #{i+1} · {gate.wall === 'front' ? 'przód' : gate.wall === 'back' ? 'tył' : gate.wall === 'left' ? 'lewa ściana' : 'prawa ściana'}</h3>
                 <button 
                   onClick={() => { setSelectedWall(gate.wall); setActiveDimId?.(activeDimId === gate.id ? null : gate.id); }} 
                   className={`p-1.5 rounded-lg transition-colors shadow-sm ${activeDimId === gate.id ? 'bg-[var(--theme)] text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-[var(--theme)]'}`} 
@@ -530,6 +530,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
               </div>
             </div>
             
+            {isPir && i === 0 && <p className="mb-3 text-xs font-semibold text-zinc-600">Ta brama jest w cenie PIR. Dodatkowe drzwi i napęd według cennika.</p>}
             <div className="space-y-4 mb-3">
             <div className="mb-2">
                 <label className="text-[10px] text-zinc-500 font-bold uppercase mb-1 block">Wymiar Bramy (Wys x Szer)</label>
