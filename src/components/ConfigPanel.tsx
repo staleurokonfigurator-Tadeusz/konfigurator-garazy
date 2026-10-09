@@ -424,7 +424,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
       {isOfferMode && isDualRoof(config) && <Section title="Geometria dachu — wycena" icon={<Maximize size={20} />}>
         <div className="space-y-4">
-          <label className="block text-sm font-semibold">Wysokość szczytu ponad ścianą (cm)
+          <label className="block text-sm font-semibold text-zinc-700">Wysokość szczytu ponad ścianą (cm)
             <input aria-label="Wysokość szczytu ponad ścianą" type="number" disabled={isReadOnly}
               min={roofRiseLimits(config).min} max={roofRiseLimits(config).max} step="any"
               key={`rise-${roofRiseCm(config)}`} defaultValue={Number(roofRiseCm(config).toFixed(2))}
@@ -434,9 +434,9 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                 e.target.value = String(Number(roofRiseCm(next).toFixed(2)));
                 if (!isReadOnly && next !== config) setConfig(prev => withRoofRise(prev, roofRiseCm(next)));
               }}
-              className="block w-full border rounded p-2 mt-1" />
+              className="block w-full border border-zinc-300 rounded p-2 mt-1 bg-white text-zinc-900" />
           </label>
-          <label className="block text-sm font-semibold">Kąt spadku dachu (°)
+          <label className="block text-sm font-semibold text-zinc-700">Kąt spadku dachu (°)
             <input aria-label="Kąt spadku dachu" type="number" disabled={isReadOnly} min={1} max={45} step="any"
               key={`angle-${roofAngleDeg(config)}`} defaultValue={Number(roofAngleDeg(config).toFixed(2))}
               onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
@@ -445,7 +445,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                 e.target.value = String(Number(roofAngleDeg(next).toFixed(2)));
                 if (!isReadOnly && next !== config) setConfig(prev => withRoofRise(prev, roofRiseCm(next)));
               }}
-              className="block w-full border rounded p-2 mt-1" />
+              className="block w-full border border-zinc-300 rounded p-2 mt-1 bg-white text-zinc-900" />
           </label>
           <p className="text-xs text-zinc-600">Wysokość całkowita: {Number(totalHeightCm(config).toFixed(2))} cm.
             Rozpiętość dachu: {roofSpanCm(config)} cm. Zakres kąta: 1–45°;
