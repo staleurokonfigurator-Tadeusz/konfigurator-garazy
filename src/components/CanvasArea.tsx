@@ -117,10 +117,10 @@ function SceneGround({ config }: { config: GarageConfig }) {
   const drivewaySource = useTexture('/textures/podjazd-kostka.webp');
   const grass = useMemo(() => {
     const texture = grassSource.clone();
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
     texture.repeat.set(groundSize * 0.3, groundSize * 0.3);
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 4;
+    texture.anisotropy = 8;
     texture.needsUpdate = true;
     return texture;
   }, [grassSource, groundSize]);
@@ -129,7 +129,7 @@ function SceneGround({ config }: { config: GarageConfig }) {
     const texture = drivewaySource.clone();
     texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 4;
+    texture.anisotropy = 8;
     texture.needsUpdate = true;
     return texture;
   }, [drivewaySource]);
@@ -162,11 +162,11 @@ function SceneGround({ config }: { config: GarageConfig }) {
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.035, 0]}>
         <planeGeometry args={[groundSize, groundSize]} />
-        <meshStandardMaterial map={grass} color="#8ca276" roughness={0.98} metalness={0} />
+        <meshStandardMaterial map={grass} color="#c2ccb5" roughness={0.98} metalness={0} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.018, garageFront + 4]}>
         <planeGeometry args={[drivewayWidth, 8]} />
-        <meshStandardMaterial map={driveway} bumpMap={drivewayBump} bumpScale={0.028} color="#d8d5cf" roughness={0.94} metalness={0} />
+        <meshStandardMaterial map={driveway} bumpMap={drivewayBump} bumpScale={0.016} color="#ece8e1" roughness={0.94} metalness={0} />
       </mesh>
     </group>
   );
@@ -217,13 +217,15 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
 
 export default function CanvasArea({ config, selectedWall, activeDimId, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
   const renderProfile = useMemo(() => getThreePerformanceProfile(), []);
+  const shadowExtent = Math.max(10, getCarportLayout(config).totalWidth / 100, config.length / 100) * 0.75;
   const contactShadowKey = useMemo(() => JSON.stringify({
     width: config.width,
     length: config.length,
     height: config.height,
+    roof: config.roofType,
     carport: [config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight],
     elements: config.elements,
-  }), [config.width, config.length, config.height, config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight, config.elements]);
+  }), [config.width, config.length, config.height, config.roofType, config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight, config.elements]);
 
   return (
     <Canvas
@@ -236,14 +238,14 @@ export default function CanvasArea({ config, selectedWall, activeDimId, colors =
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1;
       }}
-      shadows={{ type: THREE.PCFShadowMap }}
+      shadows={{ type: THREE.PCFSoftShadowMap }}
       camera={{ position: [5, 3, 7], fov: 50 }}
       className="w-full h-full"
     >
-      <ambientLight intensity={0.28} />
-      <hemisphereLight args={['#dbeafe', '#544b3e', 0.55]} />
-      <directionalLight position={[9, 13, 8]} intensity={1.75} castShadow shadow-mapSize-width={renderProfile.shadowMapSize} shadow-mapSize-height={renderProfile.shadowMapSize} shadow-bias={-0.0005} shadow-camera-left={-15} shadow-camera-right={15} shadow-camera-top={15} shadow-camera-bottom={-15} />
-      <directionalLight position={[-8, 7, -5]} intensity={0.32} color="#c7d2fe" />
+      <ambientLight intensity={0.12} />
+      <hemisphereLight args={['#e5edf4', '#8c8373', 0.65]} />
+      <directionalLight position={[shadowExtent * 0.8, shadowExtent * 1.4, shadowExtent * 0.9]} intensity={2.0} color="#fff5e6" castShadow shadow-mapSize-width={renderProfile.shadowMapSize} shadow-mapSize-height={renderProfile.shadowMapSize} shadow-bias={-0.00015} shadow-normalBias={0.015} shadow-camera-near={0.5} shadow-camera-far={shadowExtent * 5} shadow-camera-left={-shadowExtent} shadow-camera-right={shadowExtent} shadow-camera-top={shadowExtent} shadow-camera-bottom={-shadowExtent} />
+      <directionalLight position={[-8, 7, -5]} intensity={0.2} color="#dbe7f2" />
 
       <Suspense fallback={null}>
         <GarageModel config={config} colors={colors} />
@@ -251,7 +253,7 @@ export default function CanvasArea({ config, selectedWall, activeDimId, colors =
         <SceneGround config={config} />
       </Suspense>
 
-      <ContactShadows key={contactShadowKey} position={[0, -0.01, 0]} opacity={0.52} scale={30} blur={2.8} far={7} resolution={renderProfile.contactShadowResolution} frames={1} />
+      <ContactShadows key={contactShadowKey} position={[0, -0.01, 0]} opacity={0.4} scale={Math.max(30, shadowExtent * 3)} blur={3} far={7} resolution={renderProfile.contactShadowResolution} frames={1} />
 
       <CameraRig selectedWall={selectedWall} config={config} activeDimId={activeDimId} />
       
