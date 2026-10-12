@@ -196,6 +196,9 @@ test('independent carports change footprint, camera and price without changing i
   assert.deepEqual(extras.getCarportSides({...config,hasCarport:false}),[]);
   assert.equal(extras.getCarportLayout({...base,hasCarport:true}).extraWidth,300);
   assert.ok(material.getGarageCameraDistance(config,'front',0.4)>material.getGarageCameraDistance({...config,hasCarport:false},'front',0.4));
+  const phoneDistance = material.getGarageCameraDistance(config,'front',1.65);
+  assert.ok(phoneDistance < 15);
+  assert.ok(2*phoneDistance*Math.tan(50*Math.PI/360)*1.65 >= 12);
 });
 
 test('dimension editing rejects empty and invalid values and keeps existing limits and 10cm increments', () => {

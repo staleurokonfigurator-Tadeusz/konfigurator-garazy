@@ -483,7 +483,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                   <p className="mb-2 text-xs font-bold uppercase text-zinc-500">Zabudowa ścian (lamele)</p>
                   <div className="grid grid-cols-3 gap-2">
                     {(['front','side','back'] as const).map(face => <label key={face} className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-1 py-2 text-sm text-zinc-700">
-                      <input type="checkbox" disabled={isReadOnly} checked={settings.walls[face]} aria-label={label + ' — ' + face}
+                      <input type="checkbox" disabled={isReadOnly} checked={settings.walls[face]} aria-label={label + ' — ' + (face === 'front' ? 'przód' : face === 'back' ? 'tył' : 'bok')}
                         onChange={event => setConfig(prev => withCarportSettings(prev,side,{walls:{...getCarportSettings(prev,side).walls,[face]:event.target.checked}}))}/>
                       {face === 'front' ? 'Przód' : face === 'back' ? 'Tył' : 'Bok'}
                     </label>)}
