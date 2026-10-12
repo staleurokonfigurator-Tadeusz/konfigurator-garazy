@@ -8,6 +8,8 @@ import { v4 as uuidv4 } from 'uuid';
 import React, { useMemo, useState, Dispatch, SetStateAction } from 'react';
 import dynamic from 'next/dynamic';
 import { getTrustedParentOrigin, postCheckoutToWordPress, WORDPRESS_MESSAGE_VERSION } from '@/lib/wordpressBridge';
+import EditableDimension from './EditableDimension';
+import { getCarportSides, getCarportSettings, withCarportSettings, getCarportLayout, getAnchoringPrice, isAnchoringAddon } from '@/lib/garageExtras';
 import RoofTypeIcon from './RoofTypeIcon';
 import { getPirPricePerM2, isPirGarage, MAX_GARAGE_WIDTH_CM, MAX_GARAGE_LENGTH_CM } from '@/lib/garageMaterial';
 
@@ -40,11 +42,11 @@ function Section({ title, icon, children, defaultOpen = true }: { title: string;
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="bg-zinc-50 rounded-2xl border border-zinc-100 shadow-sm overflow-hidden mb-4">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between p-5 text-left transition-colors hover:bg-zinc-100">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between gap-2 p-4 sm:p-5 text-left transition-colors hover:bg-zinc-100">
         <h2 className="flex items-center gap-2 font-bold text-lg text-zinc-900"><span className="text-[var(--theme)]">{icon}</span>{title}</h2>
         <ChevronDown size={20} className={`text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && <div className="px-5 pb-5 border-t border-zinc-200 pt-4">{children}</div>}
+      {open && <div className="px-3 pb-4 sm:px-5 sm:pb-5 border-t border-zinc-200 pt-4">{children}</div>}
     </section>
   );
 }
@@ -104,7 +106,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     totalBase += area * baseM2Price;
 
     if (config.hasCarport) {
-      const carportWidth = config.carportWidth || 300;
+      const carportWidth = getCarportLayout(config).extraWidth;
       const carportArea = (carportWidth / 100) * (config.length / 100);
       totalBase += carportArea * safeNum(pricing.integrated_carport_m2_v);
     }
@@ -176,7 +178,8 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     const activeColors = [
       config.wallColor, config.roofColor, config.gateColor, 
       config.doorColor, config.windowColor, 
-      config.cornerFlashingColor, config.roofFlashingColor, config.gutterColor
+      config.cornerFlashingColor, config.roofFlashingColor, config.gutterColor,
+      ...getCarportSides(config).map(side => getCarportSettings(config, side).postColor)
     ];
     const uniqueColors = Array.from(new Set(activeColors));
     let hasWoodColor = false;
@@ -197,6 +200,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     (config.extraOptions || []).forEach(addonId => {
       const addon = customAddons.find((a: any) => a.id === addonId);
       if (addon && isAddonAvailable(config, addon)) {
+        if (isAnchoringAddon(addon)) { customAddonTotal += getAnchoringPrice(config); return; }
         if (addon.type === 'fixed') customAddonTotal += safeNum(addon.price);
         else if (addon.type === 'pct' || addon.type === 'pct_total') percentFinalMultiplier += (safeNum(addon.price) / 100);
         else if (addon.type === 'pct_base') percentBaseMultiplier += (safeNum(addon.price) / 100);
@@ -224,6 +228,9 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         next.cornerFlashingColor = prev.wallColor;
         next.roofFlashingColor = prev.wallColor;
         next.gutterColor = prev.wallColor;
+        next.carportBaseColor = prev.wallColor;
+        next.carportLeft = {...prev.carportLeft, postColor:prev.wallColor};
+        next.carportRight = {...prev.carportRight, postColor:prev.wallColor};
       }
       return next;
     });
@@ -235,8 +242,12 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     if (config.applyColorToAll) {
       setConfig(prev => ({
         ...prev,
-        wallColor: colorId, roofColor: colorId, gateColor: colorId, doorColor: colorId, windowColor: colorId, cornerFlashingColor: colorId, roofFlashingColor: colorId, gutterColor: colorId
+        wallColor: colorId, roofColor: colorId, gateColor: colorId, doorColor: colorId, windowColor: colorId, cornerFlashingColor: colorId, roofFlashingColor: colorId, gutterColor: colorId,
+        carportBaseColor: colorId, carportLeft: {...prev.carportLeft, postColor:colorId}, carportRight: {...prev.carportRight, postColor:colorId}
       }));
+    } else if (activeColorEdit === 'carport-left' || activeColorEdit === 'carport-right') {
+      const side = activeColorEdit === 'carport-left' ? 'left' : 'right';
+      setConfig(prev => withCarportSettings(prev, side, { postColor: colorId }));
     } else {
       updateConfig(activeColorEdit as keyof GarageConfig, colorId as any);
     }
@@ -365,7 +376,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
   return (
     <div className="pb-12">
       <Section title="Materiał ścian i dachu" icon={<Layers size={20} />}>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
           {([{ id: 'sheet', label: 'Standardowa blacha', detail: 'Cena według cennika' },
             { id: 'pir', label: 'Płyta warstwowa PIR', detail: `${pirPricePerM2} zł / m² garażu · orynnowanie i 1 brama w cenie` }] as const).map(material => (
             <button key={material.id} disabled={isReadOnly} aria-pressed={(isPir ? 'pir' : 'sheet') === material.id}
@@ -413,7 +424,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         <div className="space-y-6">
         {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: MAX_GARAGE_WIDTH_CM, step: 10 }, { label: 'Długość', key: 'length' as const, min: 300, max: MAX_GARAGE_LENGTH_CM, step: 10 }, { label: 'Wysokość', key: 'height' as const, min: 200, max: 350, step: 10 }].map(dim => (
             <div key={dim.key}>
-              <div className="flex justify-between mb-2 text-sm font-semibold text-zinc-700"><label>{dim.label}</label><span className="bg-white px-2 py-1 rounded border text-[var(--theme)] font-bold">{config[dim.key]} cm</span></div>
+              <div className="flex justify-between mb-2 text-sm font-semibold text-zinc-700"><label>{dim.label}</label><EditableDimension label={dim.label} value={config[dim.key]} min={dim.min} max={dim.max} step={dim.step} readOnly={isReadOnly} onChange={value => updateConfig(dim.key, value)} /></div>
               {!isReadOnly && <input type="range" min={dim.min} max={dim.max} step={dim.step} value={config[dim.key]} onChange={(e) => updateConfig(dim.key, Number(e.target.value))} className="w-full" style={{accentColor: 'var(--theme)'}} />}
             </div>
           ))}
@@ -441,43 +452,52 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
             />
           </label>
 
-          {config.hasCarport && (
-            <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl space-y-4">
-              <div>
-                <div className="flex justify-between items-center mb-1"><label className="text-xs font-bold uppercase text-zinc-500">Szerokość wiaty (cm)</label><span className="font-bold text-[var(--theme)]">{config.carportWidth || 300}</span></div>
-                {!isReadOnly && <input type="range" min={100} max={500} step={10} value={config.carportWidth || 300} onChange={(e) => updateConfig('carportWidth', Number(e.target.value))} className="w-full" style={{accentColor: 'var(--theme)'}} />}
-              </div>
-
-              <div>
-                <label className="text-xs font-bold uppercase text-zinc-500 block mb-2">Strona wiaty</label>
-                <div className="flex gap-2">
-                  <button disabled={isReadOnly} onClick={() => updateConfig('carportSide', 'left')} className={`flex-1 py-2 text-xs font-bold rounded-lg ${config.carportSide === 'left' ? 'bg-zinc-800 text-white' : 'bg-white border border-zinc-300'} ${isReadOnly ? 'cursor-not-allowed' : ''}`}>Lewa</button>
-                  <button disabled={isReadOnly} onClick={() => updateConfig('carportSide', 'right')} className={`flex-1 py-2 text-xs font-bold rounded-lg ${config.carportSide !== 'left' ? 'bg-zinc-800 text-white' : 'bg-white border border-zinc-300'} ${isReadOnly ? 'cursor-not-allowed' : ''}`}>Prawa</button>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold uppercase text-zinc-500 block mb-2">Zabudowa ścian (Lamele)</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['front', 'side', 'back'].map((wFace) => {
-                    const isChecked = config.carportWalls?.[wFace as keyof typeof config.carportWalls] ?? true;
-                    return (
-                      <label key={wFace} className={`flex justify-center items-center py-2 border rounded-lg text-xs font-bold transition-all ${isChecked ? 'border-[var(--theme)] bg-zinc-100 text-[var(--theme)]' : 'border-zinc-300 bg-white text-zinc-400'} ${isReadOnly ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                        <input type="checkbox" disabled={isReadOnly} className="hidden" checked={isChecked} onChange={(e) => updateConfig('carportWalls' as any, { ...(config.carportWalls || {front: true, side: true, back: true}), [wFace]: e.target.checked })} />
-                        {wFace === 'front' ? 'Przód' : wFace === 'back' ? 'Tył' : 'Bok'}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
+          {config.hasCarport && <>
+            <div className="grid grid-cols-3 gap-2">
+              {([{id:'left',label:'Lewa'},{id:'right',label:'Prawa'},{id:'both',label:'Obie strony'}] as const).map(side =>
+                <button key={side.id} type="button" disabled={isReadOnly} aria-pressed={(config.carportSide || 'right') === side.id}
+                  onClick={() => updateConfig('carportSide',side.id)}
+                  className={'min-h-11 rounded-lg border px-2 py-2 text-sm font-bold ' + ((config.carportSide || 'right') === side.id ? 'bg-zinc-800 text-white border-zinc-800' : 'bg-white text-zinc-700 border-zinc-300')}>{side.label}</button>)}
             </div>
-          )}
+            {getCarportSides(config).map(side => {
+              const settings = getCarportSettings(config,side);
+              const label = side === 'left' ? 'Wiata lewa' : 'Wiata prawa';
+              const color = getColorData(settings.postColor);
+              return <div key={side} className="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:p-4">
+                <h3 className="font-bold text-zinc-900">{label}</h3>
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-2 text-sm font-semibold text-zinc-700">
+                    <label>Szerokość</label><EditableDimension label={label + ' — szerokość'} value={settings.width} min={100} max={500} readOnly={isReadOnly}
+                      onChange={width => setConfig(prev => withCarportSettings(prev,side,{width}))} />
+                  </div>
+                  {!isReadOnly && <input type="range" aria-label={label + ' — szerokość'} min={100} max={500} step={10} value={settings.width}
+                    onChange={event => setConfig(prev => withCarportSettings(prev,side,{width:Number(event.target.value)}))} className="w-full" style={{accentColor:'var(--theme)'}} />}
+                </div>
+                <button type="button" disabled={isReadOnly} aria-label={'Zmień kolor słupów: ' + label} onClick={() => setActiveColorEdit(activeColorEdit === 'carport-' + side ? null : 'carport-' + side)}
+                  className="flex w-full items-center gap-3 rounded-lg border border-zinc-300 bg-white p-3 text-left text-sm text-zinc-800">
+                  <span className="h-8 w-8 shrink-0 rounded border border-zinc-300" style={{backgroundColor:color.hex,backgroundImage:color.texture ? 'url(' + color.texture + ')' : undefined,backgroundSize:'cover'}} />
+                  <span className="min-w-0 flex-1 break-words">Kolor słupów<br/><strong>{color.label}</strong></span><PaintBucket size={18}/>
+                </button>
+                {activeColorEdit === 'carport-' + side && !isReadOnly && <InlineColorSelector />}
+                <div>
+                  <p className="mb-2 text-xs font-bold uppercase text-zinc-500">Zabudowa ścian (lamele)</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['front','side','back'] as const).map(face => <label key={face} className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-zinc-300 bg-white px-1 py-2 text-sm text-zinc-700">
+                      <input type="checkbox" disabled={isReadOnly} checked={settings.walls[face]} aria-label={label + ' — ' + face}
+                        onChange={event => setConfig(prev => withCarportSettings(prev,side,{walls:{...getCarportSettings(prev,side).walls,[face]:event.target.checked}}))}/>
+                      {face === 'front' ? 'Przód' : face === 'back' ? 'Tył' : 'Bok'}
+                    </label>)}
+                  </div>
+                </div>
+              </div>;
+            })}
+          </>}
         </div>
       </Section>
 
       <Section title="Parametry Bram" icon={<BoxSelect size={20} />}>
         {!isReadOnly && (
-          <div className="mb-4 flex justify-between items-center">
+          <div className="mb-4 flex flex-wrap justify-between items-center gap-3">
             <span className="text-sm font-medium text-zinc-700">Szybki wybór bram (przód)</span>
             <div className="flex gap-2 bg-white rounded-lg border border-zinc-200 p-1">
               <button onClick={() => setConfig(prev => ({...prev, elements: prev.elements.filter(e => e.type !== 'gate' || e.wall !== 'front')}))} className={`px-3 py-1 rounded-md text-sm transition-colors ${frontGates.length === 0 ? 'bg-zinc-100 font-bold text-[var(--theme)] shadow-sm' : 'text-zinc-500 hover:bg-zinc-50'}`}>0</button>
@@ -499,7 +519,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
         {gates.map((gate, i) => (
           <div key={gate.id} className={`bg-white p-4 rounded-xl border-2 transition-all shadow-sm relative group mb-3 ${activeDimId === gate.id ? 'border-[var(--theme)]' : 'border-zinc-200'}`}>
-            <div className="flex justify-between items-center mb-4 pr-2">
+            <div className="flex flex-col min-[560px]:flex-row justify-between items-stretch min-[560px]:items-center gap-3 mb-4">
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-zinc-800">Brama #{i+1} · {gate.wall === 'front' ? 'przód' : gate.wall === 'back' ? 'tył' : gate.wall === 'left' ? 'lewa ściana' : 'prawa ściana'}</h3>
                 <button 
@@ -826,7 +846,8 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
           {customAddons.filter((opt: {id: string; label?: string}) => isAddonAvailable(config, opt)).map((opt: any) => {
             const isActive = (config.extraOptions || []).includes(opt.id);
             let priceLabel = `+${safeNum(opt.price)} zł`;
-            if (opt.type === 'pct' || opt.type === 'pct_total' || opt.type === 'pct_base') priceLabel = `+${safeNum(opt.price)}%`;
+            if (isAnchoringAddon(opt)) priceLabel = `+${getAnchoringPrice(config)} zł`;
+            else if (opt.type === 'pct' || opt.type === 'pct_total' || opt.type === 'pct_base') priceLabel = `+${safeNum(opt.price)}%`;
             else if (opt.type === 'm2') priceLabel = `+${safeNum(opt.price)} zł / m²`;
             else if (opt.type === 'mb') priceLabel = `+${safeNum(opt.price)} zł / mb`;
 

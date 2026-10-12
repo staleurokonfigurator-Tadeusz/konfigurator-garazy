@@ -7,6 +7,7 @@ import GarageModel from './GarageModel';
 import { Suspense, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { getThreePerformanceProfile } from '@/lib/threePerformance';
+import { getCarportLayout } from '@/lib/garageExtras';
 import { getGarageCameraDistance } from '@/lib/garageMaterial';
 
 interface CanvasAreaProps {
@@ -22,6 +23,7 @@ function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFa
   const controlsRef = useRef<any>(null);
   const size = useThree(state => state.size);
   const distance = getGarageCameraDistance(config, selectedWall, size.width / Math.max(size.height, 1));
+  const sceneCenterX = getCarportLayout(config).centerX / 100;
 
   useEffect(() => {
     if (!controlsRef.current) return;
@@ -29,12 +31,6 @@ function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFa
     const l = config.length * 0.01; 
     const h = config.height * 0.01;
     
-    let sceneCenterX = 0;
-    if (config.hasCarport && config.carportWidth) {
-      const cw_m = config.carportWidth * 0.01;
-      if (config.carportSide === 'right') sceneCenterX = cw_m / 2;
-      else if (config.carportSide === 'left') sceneCenterX = -cw_m / 2;
-    }
 
     let targetX = sceneCenterX;
     let targetZ = 0;
@@ -51,7 +47,7 @@ function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFa
       case 'right': targetX = w / 2; camX = w / 2 + dist * zoomMultiplier; break;
     }
     controlsRef.current.setLookAt(camX, h / 2, camZ, targetX, h / 2, targetZ, true);
-  }, [selectedWall, config.width, config.length, config.height, activeDimId, config.hasCarport, config.carportWidth, config.carportSide, distance]);
+  }, [selectedWall, config.width, config.length, config.height, activeDimId, config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight, sceneCenterX, distance]);
 
   return <CameraControls ref={controlsRef} minPolarAngle={Math.PI / 8} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={2} maxDistance={Math.max(25, distance * 1.5)} makeDefault />;
 }
@@ -225,9 +221,9 @@ export default function CanvasArea({ config, selectedWall, activeDimId, colors =
     width: config.width,
     length: config.length,
     height: config.height,
-    carport: [config.hasCarport, config.carportWidth, config.carportSide],
+    carport: [config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight],
     elements: config.elements,
-  }), [config.width, config.length, config.height, config.hasCarport, config.carportWidth, config.carportSide, config.elements]);
+  }), [config.width, config.length, config.height, config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight, config.elements]);
 
   return (
     <Canvas

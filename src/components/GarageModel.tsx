@@ -10,6 +10,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import LightweightEnvironment from './LightweightEnvironment';
 import PirPanelJoints from './PirPanelJoints';
 import { clipProfilePolygon, applyWallUV, type ProfilePoint } from '@/lib/profileClipping';
+import { getCarportSides, getCarportSettings, getCarportLayout, type CarportSide } from '@/lib/garageExtras';
 import { isPirGarage } from '@/lib/garageMaterial';
 
 interface GarageModelProps {
@@ -484,11 +485,9 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
   const invalidate = useThree(state => state.invalidate); 
 
   const hasCarport = config.hasCarport || false;
-  const cw = hasCarport ? (config.carportWidth || 300) * 0.01 : 0;
-  const cSide = config.carportSide || 'right';
-  
-  const minX = cSide === 'left' ? -w/2 - cw : -w/2;
-  const maxX = cSide === 'right' ? w/2 + cw : w/2;
+  const carportLayout = getCarportLayout(config);
+  const minX = -w/2 - carportLayout.left/100;
+  const maxX = w/2 + carportLayout.right/100;
   const totalW = maxX - minX;
   const centerX = (minX + maxX) / 2; 
 
@@ -511,6 +510,8 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       resolveColor(config.roofFlashingColor, colors).textureUrl,
       resolveColor(config.gutterColor, colors).textureUrl,
       resolveColor(config.carportBaseColor || '#333333', colors).textureUrl,
+      resolveColor(getCarportSettings(config,'left').postColor, colors).textureUrl,
+      resolveColor(getCarportSettings(config,'right').postColor, colors).textureUrl,
       resolveColor(config.carportInsertColor || config.gateColor, colors).textureUrl,
     ].filter(url => url !== '' && !LOCAL_WOOD_TEXTURES.has(url))));
 
@@ -597,7 +598,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       materials.forEach(material => { material.needsUpdate = true; });
     });
     invalidate();
-  }, [config.wallColor, config.roofColor, config.gateColor, config.doorColor, config.windowColor, config.cornerFlashingColor, config.roofFlashingColor, config.gutterColor, config.carportBaseColor, config.carportInsertColor, materialTextures, colors, invalidate]);
+  }, [config.wallColor, config.roofColor, config.gateColor, config.doorColor, config.windowColor, config.cornerFlashingColor, config.roofFlashingColor, config.gutterColor, config.carportBaseColor, config.carportInsertColor, config.carportLeft?.postColor, config.carportRight?.postColor, materialTextures, colors, invalidate]);
 
   useEffect(() => () => {
     woodColor.dispose();
@@ -938,43 +939,27 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
   
   const wallMaterialComponent = <meshStandardMaterial key={`wall-${config.wallColor}-${config.wallProfile}-${isPir}`} map={activeWallColorMap} normalMap={activeWallNormalMap} normalScale={isWallWood ? new THREE.Vector2(0.48, 0.48) : undefined} bumpMap={isPir ? undefined : wallProfileMap} bumpScale={0.16} color={isWallWood ? '#ffffff' : wallHex} roughness={isWallWood ? 0.62 : 0.48} metalness={isWallWood ? 0.05 : 0.28} envMapIntensity={0.85} side={THREE.DoubleSide} />;
 
-  const { carportBaseMaterial, carportInsertMaterial } = useMemo(() => {
-    const baseResult = resolveColor(config.carportBaseColor || '#333333', colors);
-    const insertResult = resolveColor(config.carportInsertColor || config.gateColor, colors);
-    const baseTexture = baseResult.isWood
-      ? (materialTextures[baseResult.textureUrl] || woodColor)
-      : null;
-    const insertTexture = insertResult.isWood
-      ? (materialTextures[`${insertResult.textureUrl}_horiz`] || woodColorHoriz)
-      : null;
-    const baseOptions: THREE.MeshStandardMaterialParameters = {
-      color: baseResult.isWood ? '#ffffff' : baseResult.hex,
-      roughness: 0.8,
-      metalness: 0.2,
+  const { carportBaseMaterials, carportInsertMaterial } = useMemo(() => {
+    const makeBaseMaterial = (color: string) => {
+      const result = resolveColor(color, colors);
+      const texture = result.isWood ? (materialTextures[result.textureUrl] || woodColor) : null;
+      return new THREE.MeshStandardMaterial({color:result.isWood ? '#ffffff' : result.hex, roughness:0.8, metalness:0.2, ...(texture ? {map:texture} : {})});
     };
-    const insertOptions: THREE.MeshStandardMaterialParameters = {
-      color: insertResult.isWood ? '#ffffff' : insertResult.hex,
-      roughness: insertResult.isWood ? 0.7 : 0.4,
-      metalness: insertResult.isWood ? 0 : 0.6,
-    };
-    if (baseTexture) baseOptions.map = baseTexture;
-    if (insertTexture) {
-      insertOptions.map = insertTexture;
-      insertOptions.normalMap = woodNormalHoriz;
-    }
-
+    const result = resolveColor(config.carportInsertColor || config.gateColor, colors);
+    const texture = result.isWood ? (materialTextures[result.textureUrl + '_horiz'] || woodColorHoriz) : null;
     return {
-      carportBaseMaterial: new THREE.MeshStandardMaterial(baseOptions),
-      carportInsertMaterial: new THREE.MeshStandardMaterial(insertOptions),
+      carportBaseMaterials: { left:makeBaseMaterial(getCarportSettings(config,'left').postColor), right:makeBaseMaterial(getCarportSettings(config,'right').postColor) },
+      carportInsertMaterial: new THREE.MeshStandardMaterial({color:result.isWood ? '#ffffff' : result.hex, roughness:result.isWood ? 0.7 : 0.4, metalness:result.isWood ? 0 : 0.6,
+        ...(texture ? {map:texture,normalMap:woodNormalHoriz} : {})}),
     };
-  }, [config.carportBaseColor, config.carportInsertColor, config.gateColor, colors, materialTextures, woodColor, woodColorHoriz, woodNormalHoriz]);
-
+  }, [config, colors, materialTextures, woodColor, woodColorHoriz, woodNormalHoriz]);
   useEffect(() => () => {
-    carportBaseMaterial.dispose();
-    carportInsertMaterial.dispose();
-  }, [carportBaseMaterial, carportInsertMaterial]);
+    carportBaseMaterials.left.dispose(); carportBaseMaterials.right.dispose(); carportInsertMaterial.dispose();
+  }, [carportBaseMaterials, carportInsertMaterial]);
 
-  const renderCarport = () => {
+  const renderCarport = (cSide: CarportSide) => {
+    const settings = getCarportSettings(config,cSide);
+    const cw = settings.width / 100;
     if (!hasCarport || cw === 0) return null;
 
     const pillars = []; const pSize = 0.08;
@@ -991,7 +976,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       const y = i * step + slatH/2 + 0.05;
       const isInsert = (i === Math.floor(numSlats/2) || i === Math.floor(numSlats/2) - 1);
 
-      if (config.carportWalls?.side) {
+      if (settings.walls.side) {
         const x = cSide === 'right' ? maxX - pSize/2 : minX + pSize/2;
         slats.push(
           <mesh key={`side-${i}`} position={[x, y, 0]} castShadow>
@@ -1000,7 +985,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           </mesh>
         );
       }
-      if (config.carportWalls?.front) {
+      if (settings.walls.front) {
         const x = cSide === 'right' ? w/2 + cw/2 : -w/2 - cw/2;
         slats.push(
           <mesh key={`front-${i}`} position={[x, y, l/2 - pSize/2]} castShadow>
@@ -1009,7 +994,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           </mesh>
         );
       }
-      if (config.carportWalls?.back) {
+      if (settings.walls.back) {
         const x = cSide === 'right' ? w/2 + cw/2 : -w/2 - cw/2;
         slats.push(
           <mesh key={`back-${i}`} position={[x, y, -l/2 + pSize/2]} castShadow>
@@ -1038,7 +1023,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
 
     return (
       <group>
-        {pillars.map((pos, idx) => <mesh key={`p-${idx}`} position={pos as [number,number,number]} material={carportBaseMaterial} castShadow><boxGeometry args={[pSize, h, pSize]} /></mesh>)}
+        {pillars.map((pos, idx) => <mesh key={`p-${idx}`} position={pos as [number,number,number]} material={carportBaseMaterials[cSide]} castShadow><boxGeometry args={[pSize, h, pSize]} /></mesh>)}
         {slats}
         <mesh position={[0, 0, l/2 - t]} castShadow><extrudeGeometry args={[sF, wallExtrude]} />{wallMaterialComponent}</mesh>
         <mesh position={[0, 0, -l/2]} castShadow><extrudeGeometry args={[sB, wallExtrude]} />{wallMaterialComponent}</mesh>
@@ -1087,7 +1072,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           {renderRoof()}
         </group>
 
-        {renderCarport()}
+        {getCarportSides(config).map(side => <group key={side}>{renderCarport(side)}</group>)}
       </group>
     </>
   );

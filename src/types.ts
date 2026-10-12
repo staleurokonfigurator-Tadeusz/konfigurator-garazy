@@ -20,6 +20,12 @@ export interface GarageElement {
   hasDoor?: boolean;
 }
 
+export interface CarportSettings {
+  width?: number;
+  postColor?: string;
+  walls?: { front: boolean; back: boolean; side: boolean };
+}
+
 export interface GarageConfig {
   buildingMaterial?: 'sheet' | 'pir';
   width: number;
@@ -58,7 +64,9 @@ export interface GarageConfig {
   // NOWE: Zintegrowana Wiata (Carport)
   hasCarport?: boolean;
   carportWidth?: number; // np. od 100 do 400 cm
-  carportSide?: 'left' | 'right';
+  carportSide?: 'left' | 'right' | 'both';
+  carportLeft?: CarportSettings;
+  carportRight?: CarportSettings;
   carportWalls?: {
     front: boolean;
     back: boolean;

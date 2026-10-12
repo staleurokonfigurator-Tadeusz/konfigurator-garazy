@@ -246,8 +246,8 @@ export default function Home() {
         </div>
       )}
 
-      <main className="flex flex-col md:flex-row h-screen w-full overflow-hidden bg-zinc-50" style={{ '--theme': appData.themeColor } as React.CSSProperties}>
-        <div className={`w-full relative bg-zinc-900 shadow-inner ${isReadOnly ? 'md:w-[65%] h-full' : 'h-[40vh] md:h-full md:w-[60%]'}`}>
+      <main className="garage-configurator flex flex-col md:flex-row h-dvh w-full overflow-hidden bg-zinc-50" style={{ '--theme': appData.themeColor } as React.CSSProperties}>
+        <div className={`w-full relative bg-zinc-900 shadow-inner h-[min(28svh,240px)] shrink-0 md:h-full ${isReadOnly ? 'md:w-[65%]' : 'md:w-[60%]'}`}>
           {appData?.activeType === 'carport' ? (
             <CarportCanvasArea config={config} selectedWall={selectedWall} colors={appData?.colors || []} isGeneratingAR={isGeneratingAR} onExportAR={handleExportAR} />
           ) : appData?.activeType === 'pergola' ? (
@@ -265,10 +265,10 @@ export default function Home() {
             />
           )}
           {isReadOnly && (
-            <div className="absolute top-6 left-6 pointer-events-none z-10">
-              <div className="bg-zinc-900/90 backdrop-blur-md px-6 py-4 rounded-2xl border border-zinc-800 shadow-2xl">
-                <h1 className="text-2xl font-black text-white tracking-tight uppercase">Podgląd Produkcyjny <span className="text-[var(--theme)]">3D</span></h1>
-                <p className="text-zinc-400 text-sm mt-1">Rozwiń sekcje w panelu i kliknij ikonę oka przy elemencie, by sprawdzić wymiary.</p>
+            <div className="absolute top-3 left-3 right-3 md:top-6 md:left-6 md:right-auto pointer-events-none z-10">
+              <div className="bg-zinc-900/90 backdrop-blur-md px-3 py-2 md:px-6 md:py-4 rounded-2xl border border-zinc-800 shadow-2xl">
+                <h1 className="text-sm md:text-2xl font-black text-white tracking-tight uppercase">Podgląd Produkcyjny <span className="text-[var(--theme)]">3D</span></h1>
+                <p className="hidden md:block text-zinc-400 text-sm mt-1">Rozwiń sekcje w panelu i kliknij ikonę oka przy elemencie, by sprawdzić wymiary.</p>
               </div>
             </div>
           )}
@@ -281,7 +281,7 @@ export default function Home() {
           )}
         </div>
 
-        <div className={`w-full flex flex-col bg-white border-l border-zinc-200 shadow-[-4px_0_25px_rgba(0,0,0,0.05)] relative z-10 ${isReadOnly ? 'md:w-[35%] h-full' : 'h-[60vh] md:h-full md:w-[40%]'}`}>
+        <div className={`w-full flex flex-col flex-1 min-h-0 md:h-full bg-white border-l border-zinc-200 shadow-[-4px_0_25px_rgba(0,0,0,0.05)] relative z-10 ${isReadOnly ? 'md:w-[35%]' : 'md:w-[40%]'}`}>
           
           {/* WSKAŹNIK KROKÓW */}
           {!isReadOnly && (
@@ -300,7 +300,7 @@ export default function Home() {
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar scroll-smooth" onScroll={handleScroll}>
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 md:p-6 custom-scrollbar scroll-smooth" onScroll={handleScroll}>
             {appData?.activeType === 'carport' ? (
               <CarportConfigPanel config={config} setConfig={setConfig} appData={appData} />
             ) : appData?.activeType === 'pergola' ? (

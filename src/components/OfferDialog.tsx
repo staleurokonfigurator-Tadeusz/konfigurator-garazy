@@ -102,14 +102,14 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
         <header className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-200 bg-white/95 px-6 py-5 backdrop-blur">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.2em] text-orange-600">Panel ofertowy</p>
-            <h2 className="mt-1 text-2xl font-black">Przygotuj ofertę PDF</h2>
+            <h2 className="mt-1 text-xl sm:text-2xl font-black">Przygotuj ofertę PDF</h2>
           </div>
           <button onClick={onClose} disabled={generating} className="rounded-full p-2 hover:bg-zinc-100 disabled:opacity-50" aria-label="Zamknij">
             <X size={22} />
           </button>
         </header>
 
-        <div className="grid gap-6 p-6 md:grid-cols-2">
+        <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 md:grid-cols-2">
           <label className="text-sm font-bold md:col-span-2">Marka na ofercie
             <select value={customer.brand} onChange={event => updateCustomer('brand', event.target.value as OfferCustomer['brand'])} className="mt-2 w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 font-normal outline-none focus:border-orange-500">
               <option value="gardhouse">Gardhouse</option>
@@ -143,7 +143,7 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
 
         {error && <p className="mx-6 mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</p>}
 
-        <footer className="mt-6 flex flex-col gap-3 border-t border-zinc-200 p-6 sm:flex-row sm:items-center sm:justify-between">
+        <footer className="mt-6 flex flex-col gap-3 border-t border-zinc-200 p-4 sm:p-6 sm:flex-row sm:items-center sm:justify-between">
           <div><span className="text-sm text-zinc-500">Numer oferty</span><p className="font-bold">zostanie nadany przez WordPress</p></div>
           <button onClick={handleGenerate} disabled={generating} className="flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-6 py-3 font-black text-white shadow-lg hover:bg-orange-700 disabled:cursor-wait disabled:opacity-60">
             <FileDown size={20} /> {generating ? 'Tworzę widoki i PDF…' : 'Generuj ofertę PDF'}

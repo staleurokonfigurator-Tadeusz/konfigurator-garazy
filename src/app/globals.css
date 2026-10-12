@@ -22,3 +22,11 @@ body {
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@media (max-width: 767px) {
+  .garage-configurator input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  .garage-configurator select, .garage-configurator textarea { font-size:16px; min-height:44px; }
+  .garage-configurator button { min-height:44px; }
+  .garage-configurator input[type="range"] { min-height:32px; }
+  .garage-configurator input[type="number"] { min-width:88px; }
+}

@@ -16,7 +16,14 @@ export function isGarageProjectConfig(value: unknown): value is GarageConfig {
   if (!profileFields.every(key => profiles.includes(String(c[key])))) return false;
   if (typeof c.gutters !== 'boolean' || typeof c.applyColorToAll !== 'boolean' || typeof c.removeFoil !== 'boolean') return false;
   if (c.extraOptions !== undefined && (!Array.isArray(c.extraOptions) || c.extraOptions.length > 50 || !c.extraOptions.every(id => typeof id === 'string' && id.length <= 100))) return false;
-  if (c.hasCarport && (!finiteBetween(c.carportWidth ?? 300, 100, 500) || !['left','right',undefined].includes(c.carportSide as string | undefined))) return false;
+  if (c.hasCarport && (!finiteBetween(c.carportWidth ?? 300, 100, 500) || !['left','right','both',undefined].includes(c.carportSide as string | undefined))) return false;
+  for (const key of ['carportLeft','carportRight']) {
+    const settings = c[key] as Record<string, unknown> | undefined;
+    if (settings !== undefined && (!settings || typeof settings !== 'object' || Array.isArray(settings)
+      || (settings.width !== undefined && !finiteBetween(settings.width,100,500))
+      || (settings.postColor !== undefined && (typeof settings.postColor !== 'string' || settings.postColor.length > 100))
+      || (settings.walls !== undefined && (!settings.walls || typeof settings.walls !== 'object' || !['front','back','side'].every(face => typeof (settings.walls as Record<string,unknown>)[face] === 'boolean'))))) return false;
+  }
   if (!Array.isArray(c.elements) || c.elements.length > 30) return false;
   const ids = new Set<string>();
   for (const el of c.elements) {

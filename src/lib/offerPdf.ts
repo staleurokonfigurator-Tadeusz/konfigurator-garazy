@@ -1,3 +1,4 @@
+import { getCarportLayout, getCarportSides, getCarportSettings } from './garageExtras';
 import type { GarageConfig, GarageElement, WallFace } from '@/types';
 import {
   PDF_FONT, PDF_INK, PDF_MUTED, PDF_BOTTOM,
@@ -72,7 +73,12 @@ function getCarportWidthCm(config: GarageConfig) {
     || rawEnabled === 'true'
     || ((rawEnabled === undefined || rawEnabled === null) && storedWidth > 0);
   if (!enabled) return 0;
-  return storedWidth || 300;
+  return getCarportLayout({...config,hasCarport:true,carportWidth:storedWidth || 300}).extraWidth;
+}
+
+function getPdfCarports(config: GarageConfig) {
+  const normalized = {...config,hasCarport:getCarportWidthCm(config) > 0};
+  return getCarportSides(normalized).map(side => ({side,...getCarportSettings(normalized,side)}));
 }
 
 function elementDescription(element: GarageElement) {
@@ -89,15 +95,17 @@ function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: 
   const ratio = Math.min(maxWidth / totalWidthCm, maxHeight / config.length);
   const width = totalWidthCm * ratio;
   const garageWidth = config.width * ratio;
-  const carportWidth = carportWidthCm * ratio;
+  const carports = getPdfCarports(config);
+  const leftWidth = carports.find(item => item.side === 'left')?.width || 0;
   const length = config.length * ratio;
-  const garageX = carportWidth > 0 && config.carportSide === 'left' ? x + carportWidth : x;
-  const carportX = config.carportSide === 'left' ? x : garageX + garageWidth;
+  const garageX = x + leftWidth * ratio;
 
   doc.setDrawColor(35, 35, 35);
   doc.setLineWidth(0.7);
   doc.rect(garageX, y, garageWidth, length);
-  if (carportWidth > 0) {
+  for (const item of carports) {
+    const carportWidth = item.width * ratio;
+    const carportX = item.side === 'left' ? x : garageX + garageWidth;
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(100, 116, 139);
     doc.setLineDashPattern([2, 1], 0);
@@ -135,10 +143,14 @@ function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: 
   doc.setFontSize(9);
   doc.text(`${totalWidthCm} cm`, x + width / 2, y - 7, { align: 'center' });
   doc.text(`${config.length} cm`, x - 8, y + length / 2, { angle: 90, align: 'center' });
-  if (carportWidth > 0) {
+  if (carports.length) {
     doc.setFontSize(6.5);
     doc.text(`Garaż ${config.width} cm`, garageX + garageWidth / 2, y + length + 8, { align: 'center' });
-    doc.text(`Wiata ${carportWidthCm} cm`, carportX + carportWidth / 2, y + length + 8, { align: 'center' });
+    carports.forEach(item => {
+      const carportWidth = item.width * ratio;
+      const carportX = item.side === 'left' ? x : garageX + garageWidth;
+      doc.text('Wiata ' + item.width + ' cm', carportX + carportWidth / 2, y + length + 8, { align:'center' });
+    });
   }
 
   const markOpening = (element: GarageElement, index: number) => {
@@ -199,9 +211,10 @@ function drawElevationPlan(
   const scale = Math.min(maxWidth / drawingWidthCm, maxHeight / config.height);
   const width = drawingWidthCm * scale;
   const garageWidth = wallWidthCm * scale;
-  const carportWidth = carportWidthCm * scale;
-  const garageX = carportWidth > 0 && config.carportSide === 'left' ? x + carportWidth : x;
-  const carportX = config.carportSide === 'left' ? x : garageX + garageWidth;
+  const carports = getPdfCarports(config);
+  const paperLeft = wall === 'back' ? 'right' : 'left';
+  const leftWidth = isFrontBack ? (carports.find(item => item.side === paperLeft)?.width || 0) : 0;
+  const garageX = x + leftWidth * scale;
   const wallHeight = config.height * scale;
   const isDualLeftRight = config.roofType === 'dual-slope';
   const isDualFrontBack = config.roofType === 'dual-slope-front-back';
@@ -245,7 +258,9 @@ function drawElevationPlan(
   doc.setLineWidth(0.5);
   doc.setFillColor(255, 255, 255);
   drawWallOutline(garageX, garageWidth, 'FD');
-  if (carportWidth > 0) {
+  if (isFrontBack) { for (const item of carports) {
+    const carportWidth = item.width * scale;
+    const carportX = item.side === paperLeft ? x : garageX + garageWidth;
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(100, 116, 139);
     doc.setLineDashPattern([2, 1], 0);
@@ -258,7 +273,7 @@ function drawElevationPlan(
     doc.setFontSize(6.5);
     doc.setTextColor(71, 85, 105);
     doc.text('WIATA', carportX + carportWidth / 2, y + wallHeight / 2, { align: 'center' });
-  } else if (integratedCarportWidthCm > 0 && wall === config.carportSide) {
+  }} else if (carports.some(item => item.side === wall)) {
     doc.setDrawColor(100, 116, 139);
     doc.setFillColor(239, 246, 255);
     doc.setLineDashPattern([2, 1], 0);
@@ -355,7 +370,7 @@ function drawElevationPlan(
   doc.setFont(PDF_FONT, 'normal');
   doc.setFontSize(8);
   doc.text(`${drawingWidthCm} cm`, x + width / 2, y + wallHeight + 10, { align: 'center' });
-  if (carportWidth > 0) {
+  if (carportWidthCm > 0) {
     doc.setFontSize(5.8);
     doc.text(`Garaż ${wallWidthCm} cm + wiata ${carportWidthCm} cm`, x + width / 2, y + wallHeight + 14, { align: 'center' });
   }
@@ -368,7 +383,7 @@ function drawCarportTechnicalPage(doc: import('jspdf').jsPDF, config: GarageConf
   doc.setFont(PDF_FONT, 'normal');
   doc.setFontSize(9);
   doc.setTextColor(PDF_MUTED);
-  doc.text(`Wiata: ${carportWidth} cm, strona ${carportSide === 'left' ? 'lewa' : 'prawa'}. Konstrukcja wiaty oznaczona linią przerywaną.`, 16, 55, { maxWidth: 178 });
+  doc.text(getPdfCarports(config).map(item => (item.side === 'left' ? 'Wiata lewa: ' : 'Wiata prawa: ') + item.width + ' cm').join('; ') + '. Konstrukcja oznaczona linią przerywaną.', 16, 55, { maxWidth: 178 });
   drawPdfCard(doc, 16, 65, 178, 110, '#f8fafc');
   doc.setFont(PDF_FONT, 'bold');
   doc.setFontSize(10);
@@ -524,8 +539,11 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   const builtInOptions = new Set(['roofTile', 'cornerFlashings', 'roofFlashings']);
   const extraOptions = (config.extraOptions || []).filter(id => !builtInOptions.has(id))
     .map(id => input.optionLabels?.[id] || id);
-  const carportWalls = ['front', 'back', 'side'].filter(face => config.carportWalls?.[face as keyof NonNullable<GarageConfig['carportWalls']>] === true)
-    .map(face => face === 'front' ? 'przód' : face === 'back' ? 'tył' : 'bok').join(', ');
+  const carportDetails = getPdfCarports(config).map(item => {
+    const walls = (['front','back','side'] as const).filter(face => item.walls[face])
+      .map(face => face === 'front' ? 'przód' : face === 'back' ? 'tył' : 'bok').join(', ');
+    return `${item.side === 'left' ? 'Lewa' : 'Prawa'}: ${item.width} cm / słupy: ${color(item.postColor)}\nZabudowa: ${walls || 'bez zabudowy'}`;
+  }).join('\n');
   const details = [
     ['Wymiary garażu', `${config.width} x ${config.length} x ${config.height} cm (szer. x dł. x wys. ścian)`],
     ['Materiał ścian i dachu', materialLabel(config)],
@@ -538,7 +556,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     ['Rynny i rury spustowe', config.buildingMaterial === 'pir' ? `Tak, w cenie PIR / ${color(config.gutterColor)}` : config.gutters ? `Tak / ${color(config.gutterColor)}` : 'Nie'],
     ['Obróbki narożne', config.extraOptions?.includes('cornerFlashings') ? `Tak / ${color(config.cornerFlashingColor)}` : 'Nie'],
     ['Obróbki dachu', config.extraOptions?.includes('roofFlashings') ? `Tak / ${color(config.roofFlashingColor)}` : 'Nie'],
-    ['Wiata zintegrowana', carportWidth > 0 ? `Szerokość ${carportWidth} cm / strona ${config.carportSide === 'left' ? 'lewa' : 'prawa'}\nZabudowa: ${carportWalls || 'bez zabudowy'}` : 'Nie'],
+    ['Wiaty zintegrowane', carportWidth > 0 ? carportDetails : 'Nie'],
     ['Usunięcie folii ochronnej', config.removeFoil ? 'Tak' : 'Nie'],
     ['Opcje dodatkowe', extraOptions.length ? extraOptions.join(', ') : 'Brak dodatkowych opcji'],
   ];

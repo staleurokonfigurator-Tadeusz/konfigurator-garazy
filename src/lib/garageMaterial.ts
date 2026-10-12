@@ -1,3 +1,4 @@
+import { getCarportLayout } from './garageExtras';
 import type { GarageConfig, WallFace } from '@/types';
 
 export const DEFAULT_PIR_PRICE_PER_M2 = 1300;
@@ -13,7 +14,7 @@ export function getPirPricePerM2(value: unknown): number {
 }
 
 export function getGarageCameraDistance(config: GarageConfig, wall: WallFace, aspect: number): number {
-  const width = config.width / 100 + (config.hasCarport ? (config.carportWidth || 300) / 100 : 0);
+  const width = getCarportLayout(config).totalWidth / 100;
   const length = config.length / 100;
   const previousDistance = Math.max(width, length) + 4;
   if (config.width <= 800 && config.length <= 1000) return previousDistance;

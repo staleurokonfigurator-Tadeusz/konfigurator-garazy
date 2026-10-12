@@ -16,6 +16,7 @@ function load(relative) {
 const options = load('src/lib/garageOptions.ts');
 const storage = load('src/lib/projectStorage.ts');
 const material = load('src/lib/garageMaterial.ts');
+const extras = load('src/lib/garageExtras.ts');
 const collision = load('src/lib/collision.ts');
 const joints = load('src/components/PirPanelJoints.tsx');
 const panelSource = fs.readFileSync(path.join(root, 'src/components/ConfigPanel.tsx'), 'utf8');
@@ -30,11 +31,11 @@ function visit(node) {
 visit(parsed);
 assert.ok(priceCallback);
 // Execute the callback used by the UI itself, rather than duplicating the price formula.
-const calculate = new Function('config','pricing','customAddons','appData','dbColors','isPirGarage','getPirPricePerM2','isAddonAvailable',
+const calculate = new Function('config','pricing','customAddons','appData','dbColors','isPirGarage','getPirPricePerM2','isAddonAvailable','getCarportSides','getCarportSettings','getCarportLayout','isAnchoringAddon','getAnchoringPrice',
   compile('const safeNum = (val: unknown) => { const num = Number(val); return isNaN(num) ? 0 : num; }; return ('+priceCallback+')();'));
 const base = {width:300,length:500,height:210,roofType:'dual-slope',elements:[],extraOptions:[],gutters:false};
 const pricing = {sqm_single_v:150,sqm_dual_v:200,gate_up_2x2:800,gutter_v:10,roof_tile_v:20,integrated_carport_m2_v:100};
-const price = (config, rates=pricing, addons=[]) => calculate(config,rates,addons,{baseConfig:{h:210}},[],material.isPirGarage,material.getPirPricePerM2,options.isAddonAvailable);
+const price = (config, rates=pricing, addons=[]) => calculate(config,rates,addons,{baseConfig:{h:210}},[],material.isPirGarage,material.getPirPricePerM2,options.isAddonAvailable,extras.getCarportSides,extras.getCarportSettings,extras.getCarportLayout,extras.isAnchoringAddon,extras.getAnchoringPrice);
 
 test('legacy configs remain sheet; standard roof prices are preserved', () => {
   assert.equal(material.isPirGarage(base),false);
@@ -173,4 +174,66 @@ test('draft and project files round trip 30m PIR, wood and wide skylights', () =
   for(const config of [{...fullConfig,width:3001},{...fullConfig,height:351},{...fullConfig,elements:[...fullConfig.elements,...fullConfig.elements]}]) {
     assert.throws(()=>storage.parseProjectFile(JSON.stringify({...project,config})));
   }
+});
+
+test('anchoring price covers exact and fractional area boundaries, independent of addon stored price', () => {
+  const addon={id:'kotwiczenie_998',label:'Kotwiczenie',type:'fixed',price:0};
+  for(const [width,length,cost] of [[600,600,250],[610,600,350],[1000,500,350],[1000,510,450],[3000,3000,450]]) {
+    const config={...base,width,length};
+    assert.equal(extras.getAnchoringPrice(config),cost);
+    assert.equal(price({...config,extraOptions:[addon.id]},pricing,[addon])-price(config),cost);
+  }
+});
+
+test('independent carports change footprint, camera and price without changing inactive sides', () => {
+  const config={...base,width:600,hasCarport:true,carportSide:'both',carportLeft:{width:150,postColor:'#112233',walls:{front:true,side:false,back:false}},carportRight:{width:350,postColor:'#445566',walls:{front:false,side:true,back:true}}};
+  assert.deepEqual(extras.getCarportLayout(config),{left:150,right:350,extraWidth:500,totalWidth:1100,centerX:100});
+  assert.equal(price(config),8500);
+  const updated=extras.withCarportSettings(config,'left',{width:200,postColor:'#abcdef'});
+  assert.equal(updated.carportRight,config.carportRight);
+  assert.equal(extras.getCarportSettings(updated,'left').walls.front,true);
+  assert.equal(price({...config,carportSide:'right'}),7750);
+  assert.deepEqual(extras.getCarportSides({...config,hasCarport:false}),[]);
+  assert.equal(extras.getCarportLayout({...base,hasCarport:true}).extraWidth,300);
+  assert.ok(material.getGarageCameraDistance(config,'front',0.4)>material.getGarageCameraDistance({...config,hasCarport:false},'front',0.4));
+});
+
+test('dimension editing rejects empty and invalid values and keeps existing limits and 10cm increments', () => {
+  for(const text of ['', ' ', 'wrong', 'Infinity']) assert.equal(extras.normalizeDimension(text,200,3000),null);
+  assert.equal(extras.normalizeDimension('390,0',200,3000),390);
+  assert.equal(extras.normalizeDimension('305',200,3000),310);
+  assert.equal(extras.normalizeDimension('10',200,3000),200);
+  assert.equal(extras.normalizeDimension('9999',200,3000),3000);
+  assert.equal(extras.normalizeDimension('9999',100,500),500);
+});
+
+test('independent carport configurations persist with validation; invalid settings are rejected', () => {
+  const config={...fullConfig,hasCarport:true,carportSide:'both',carportLeft:{width:150,postColor:'#112233',walls:{front:true,back:false,side:true}},carportRight:{width:350,postColor:'zloty-dab'}};
+  assert.equal(storage.isGarageProjectConfig(config),true);
+  const project={version:1,id:'dual',name:'Dwie wiaty',savedAt:'2026-10-12',config};
+  assert.deepEqual(storage.parseProjectFile(JSON.stringify(project)).config,config);
+  for(const invalid of [null, [], {width:501}, {postColor:'a'.repeat(101)}, {walls:{front:'yes'}}]) assert.equal(storage.isGarageProjectConfig({...config,carportLeft:invalid}),false);
+});
+
+test('PDF diagrams draw separate unequal carports and keep every roof orientation finite', () => {
+  const pdfSource=fs.readFileSync(path.join(root,'src/lib/offerPdf.ts'),'utf8');
+  const pdfAst=ts.createSourceFile('offerPdf.ts',pdfSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+  const names=['getCarportWidthCm','getPdfCarports','drawDimensionPlan','drawElevationPlan'];
+  const funcs=pdfAst.statements.filter(node=>ts.isFunctionDeclaration(node)&&names.includes(node.name?.text)).map(node=>node.getText(pdfAst)).join('\n');
+  const drawings=new Function('getCarportLayout','getCarportSides','getCarportSettings',compile("const PDF_FONT='helvetica', PDF_INK='#333333', PDF_MUTED='#64748b', faceNames={front:'front',back:'back',left:'left',right:'right'};"+funcs+'; return {drawDimensionPlan,drawElevationPlan};'))(extras.getCarportLayout,extras.getCarportSides,extras.getCarportSettings);
+  const {jsPDF}=require('jspdf');
+  const config={...base,width:600,hasCarport:true,carportSide:'both',carportLeft:{width:150},carportRight:{width:350}};
+  const doc=new jsPDF();const rectangles=[];const original=doc.rect.bind(doc);
+  doc.rect=(...args)=>{assert.ok(args.slice(0,4).every(Number.isFinite));rectangles.push(args);return original(...args);};
+  drawings.drawDimensionPlan(doc,config,10,20,142,75);
+  const bodies=rectangles.filter(rect=>rect[2]>2&&rect[3]>2);
+  assert.equal(bodies.length,3);
+  const scale=142/1100;
+  assert.ok(Math.abs(bodies[0][0]-(10+150*scale))<1e-6);
+  assert.ok(Math.abs(bodies[1][2]-150*scale)<1e-6);
+  assert.ok(Math.abs(bodies[2][2]-350*scale)<1e-6);
+  for(const roofType of ['dual-slope','dual-slope-front-back','slope-front','slope-back','slope-left','slope-right']) for(const wall of ['front','back','left','right']) {
+    drawings.drawElevationPlan(doc,{...config,roofType},wall,wall,20,130,160,42);
+  }
+  assert.ok(doc.output('arraybuffer').byteLength>1000);
 });
