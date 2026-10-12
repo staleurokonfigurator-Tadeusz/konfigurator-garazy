@@ -720,10 +720,10 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
 
   const renderWallGeometry = (wall: WallFace, shape: THREE.Shape, isSide = false, isLeftWall = false) => {
     const openings = (config.elements || []).filter(element => element.wall === wall).map(element => ({
-      x: isSide ? ((l - 2*t) / 2 + (isLeftWall ? -1 : 1) * element.x / 100) : element.x / 100,
-      y: element.y / 100 + element.height / 200,
-      width: element.width / 100,
-      height: element.height / 100,
+      x: isSide ? ((l - 2*t) / 2 + (isLeftWall ? -1 : 1) * (element.x || 0) / 100) : (element.x || 0) / 100,
+      y: (element.y || 0) / 100 + (element.height || 0) / 200,
+      width: (element.width || 0) / 100,
+      height: (element.height || 0) / 100,
     }));
     return <WallGeometry outlineKey={JSON.stringify(shape.getPoints().map(point => [point.x, point.y]))}
       openingsKey={JSON.stringify(openings)} depth={t} />;
