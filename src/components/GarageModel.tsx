@@ -25,7 +25,7 @@ interface GarageModelProps {
 
 const PROFILE_TYPES: SheetProfile[] = ['pionowe-t7', 'poziome-t7', 'pionowe-t14', 'poziome-t14', 'pionowe-t17', 'poziome-t17'];
 const GOLDEN_OAK_TEXTURE = '/textures/zloty-dab-premium.webp';
-const DARK_WALNUT_TEXTURE = '/textures/ciemny-orzech.webp';
+const DARK_WALNUT_TEXTURE = '/textures/ciemny-orzech-natural-v2.webp';
 const LOCAL_WOOD_TEXTURES = new Set([GOLDEN_OAK_TEXTURE, DARK_WALNUT_TEXTURE]);
 
 function createProfileBumpTexture(profile: SheetProfile) {
