@@ -39,3 +39,36 @@ test('all six sheet profiles clip ribs to gable, align UV and exclude openings',
     geometry.dispose();
   }
 });
+
+test('roof T-7 runs down either slope axis, stays inside the roof and keeps normals upward',()=>{
+  const {createRoofSheetGeometry}=load('src/lib/roofSheetGeometry.ts');
+  for(const axis of ['x','z']) for(const [width,depth] of [[3.3,6.3],[30.3,30.3],[40.3,6.3]]) {
+    const geometry=createRoofSheetGeometry(width,depth,axis);
+    const p=geometry.getAttribute('position'),uv=geometry.getAttribute('uv'),normal=geometry.getAttribute('normal');
+    let raised=0;
+    for(let i=0;i<p.count;i++){
+      const x=p.getX(i),y=p.getY(i),z=p.getZ(i);
+      assert.ok([x,y,z,uv.getX(i),uv.getY(i)].every(Number.isFinite));
+      assert.ok(Math.abs(x)<=width/2+0.00001 && Math.abs(z)<=depth/2+0.00001);
+      assert.ok(y>=0 && y<=0.007001);
+      assert.ok(normal.getY(i)>0);
+      const along=axis==='x'?x:z,span=axis==='x'?width:depth;
+      assert.ok(Math.abs(Math.abs(along)-span/2)<0.00001,'rib varies along the fall');
+      if(y>0.006)raised++;
+    }
+    assert.ok(raised>0);
+    assert.ok(p.count<8000,'roof mesh is unexpectedly dense');
+    geometry.dispose();
+  }
+});
+
+test('tile relief keeps finite geometry within desktop and phone detail budgets',()=>{
+  const helper=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='createRoofTileReliefGeometry').getText(ast);
+  const create=new Function('THREE',compile(helper)+';return createRoofTileReliefGeometry;')(THREE);
+  for(const axis of ['x','z']) for(const budget of [32,64]){
+    const geometry=create(30,30,axis,budget),p=geometry.getAttribute('position');
+    assert.equal(p.count,(budget+1)**2);
+    for(let i=0;i<p.count;i++)assert.ok([p.getX(i),p.getY(i),p.getZ(i)].every(Number.isFinite));
+    geometry.dispose();
+  }
+});

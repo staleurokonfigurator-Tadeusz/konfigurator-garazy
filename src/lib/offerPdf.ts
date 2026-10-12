@@ -548,7 +548,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     ['Wymiary garażu', `${config.width} x ${config.length} x ${config.height} cm (szer. x dł. x wys. ścian)`],
     ['Materiał ścian i dachu', materialLabel(config)],
     ['Typ dachu', roofNames[config.roofType] || config.roofType],
-    ['Pokrycie dachu', config.buildingMaterial === 'pir' ? materialLabel(config) : config.extraOptions?.includes('roofTile') ? 'Blachodachówka' : `Blacha trapezowa / ${profileLabel(config.roofProfile)}`],
+    ['Pokrycie dachu', config.buildingMaterial === 'pir' ? `${materialLabel(config)} / ${profileLabel('pionowe-t7')}` : config.extraOptions?.includes('roofTile') ? 'Blachodachówka' : `Blacha trapezowa / ${profileLabel('pionowe-t7')}`],
     ['Ściany', `${config.buildingMaterial === 'pir' ? materialLabel(config) : profileLabel(config.wallProfile)}\nKolor: ${color(config.wallColor)}`],
     ['Dach - kolor', color(config.roofColor)],
     ['Bramy - wykończenie', `${profileLabel(config.gateProfile)}\nKolor: ${color(config.gateColor)}`],

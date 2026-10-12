@@ -113,14 +113,14 @@ function SceneGround({ config }: { config: GarageConfig }) {
     Math.max(getGarageCameraDistance(config, 'front', aspect), getGarageCameraDistance(config, 'left', aspect))
     + Math.max(config.width, config.length) / 200 + 10
   ));
-  const grassSource = useTexture('/textures/trawa.webp');
-  const drivewaySource = useTexture('/textures/podjazd-kostka.webp');
+  const grassSource = useTexture('/textures/trawa-light-v3.webp');
+  const drivewaySource = useTexture('/textures/podjazd-light-v3.webp');
   const grass = useMemo(() => {
     const texture = grassSource.clone();
     texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
     texture.repeat.set(groundSize * 0.3, groundSize * 0.3);
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 8;
+    texture.anisotropy = 2;
     texture.needsUpdate = true;
     return texture;
   }, [grassSource, groundSize]);
@@ -129,7 +129,7 @@ function SceneGround({ config }: { config: GarageConfig }) {
     const texture = drivewaySource.clone();
     texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 8;
+    texture.anisotropy = 2;
     texture.needsUpdate = true;
     return texture;
   }, [drivewaySource]);
