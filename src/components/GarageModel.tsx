@@ -354,7 +354,7 @@ function RoofSheetRelief({ width, depth, slopeAxis, position, color, texture, is
 }) {
   const geometry = useMemo(() => createRoofSheetGeometry(width, depth, slopeAxis), [width, depth, slopeAxis]);
   useEffect(() => () => geometry.dispose(), [geometry]);
-  return <mesh geometry={geometry} position={position} castShadow receiveShadow>
+  return <mesh geometry={geometry} position={position} castShadow>
     <meshStandardMaterial color={isWood ? '#ffffff' : color} map={texture} {...appearance} side={THREE.DoubleSide} />
   </mesh>;
 }
