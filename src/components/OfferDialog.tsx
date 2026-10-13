@@ -17,6 +17,7 @@ interface OfferDialogProps {
   onClose: () => void;
   storeUrl?: string;
   requestARExport?: () => Promise<Blob>;
+  onCaptureViewsChange?: (capturing: boolean) => void;
 }
 
 const EMPTY_CUSTOMER: OfferCustomer = {
@@ -25,7 +26,7 @@ const EMPTY_CUSTOMER: OfferCustomer = {
 
 const wait = (ms: number) => new Promise(resolve => window.setTimeout(resolve, ms));
 
-export default function OfferDialog({ config, estimatedPrice, colors, addons = [], selectedWall, setSelectedWall, onClose, storeUrl, requestARExport }: OfferDialogProps) {
+export default function OfferDialog({ config, estimatedPrice, colors, addons = [], selectedWall, setSelectedWall, onClose, storeUrl, requestARExport, onCaptureViewsChange }: OfferDialogProps) {
   const [customer, setCustomer] = useState<OfferCustomer>(EMPTY_CUSTOMER);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
@@ -39,14 +40,19 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
   const captureViews = async () => {
     const views: Partial<Record<WallFace, string>> = {};
     const walls: WallFace[] = ['front', 'right', 'back', 'left'];
-    for (const wall of walls) {
-      setSelectedWall(wall);
-      await wait(900);
-      const canvas = document.querySelector('canvas');
-      if (canvas) views[wall] = canvas.toDataURL('image/jpeg', 0.82);
+    onCaptureViewsChange?.(true);
+    try {
+      for (const wall of walls) {
+        setSelectedWall(wall);
+        await wait(900);
+        const canvas = document.querySelector('canvas');
+        if (canvas) views[wall] = canvas.toDataURL('image/jpeg', 0.82);
+      }
+      return views;
+    } finally {
+      setSelectedWall(selectedWall);
+      onCaptureViewsChange?.(false);
     }
-    setSelectedWall(selectedWall);
-    return views;
   };
 
   const handleGenerate = async () => {

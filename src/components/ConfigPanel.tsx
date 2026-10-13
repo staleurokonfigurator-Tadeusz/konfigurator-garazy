@@ -30,6 +30,7 @@ interface ConfigPanelProps {
   setIsGeneratingAR?: Dispatch<SetStateAction<boolean>>;
   isReadOnly?: boolean; 
   isOfferMode?: boolean;
+  onCaptureViewsChange?: (capturing: boolean) => void;
   storeUrl?: string;
   requestARExport?: () => Promise<Blob>;
   activeDimId?: string | null;
@@ -56,7 +57,7 @@ function Section({ title, icon, children, defaultOpen = true }: { title: string;
   );
 }
 
-export default function ConfigPanel({ config, assemblyConfig, assemblyControls, onDisableCarports, outerCarportSide, setConfig, selectedWall, setSelectedWall, appData, isGeneratingAR, setIsGeneratingAR, isReadOnly = false, isOfferMode = false, storeUrl, requestARExport, activeDimId, setActiveDimId }: ConfigPanelProps) {
+export default function ConfigPanel({ config, assemblyConfig, assemblyControls, onDisableCarports, outerCarportSide, setConfig, selectedWall, setSelectedWall, appData, isGeneratingAR, setIsGeneratingAR, isReadOnly = false, isOfferMode = false, onCaptureViewsChange, storeUrl, requestARExport, activeDimId, setActiveDimId }: ConfigPanelProps) {
   const [activeColorEdit, setActiveColorEdit] = useState<string | null>(null);
   const [elementError, setElementError] = useState('');
   const [region, setRegion] = useState('');
@@ -923,7 +924,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
       </div>
 
       {isOfferOpen && (
-        <OfferDialog
+        <OfferDialog onCaptureViewsChange={onCaptureViewsChange}
           config={orderConfig}
           estimatedPrice={calculatedPrice}
           colors={dbColors}

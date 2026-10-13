@@ -374,3 +374,48 @@ test('changing window dimensions retains its vertical centre and does not block 
   assert.equal(next.elements[0].y,15);
   assert.ok(collision.checkWallBounds(collision.getElementRect(next.elements[0]),300,210));
 });
+
+const camera = load('src/lib/garageCamera.ts');
+test('right garage left wall is viewed through the recess instead of from the left outer wall', () => {
+  const config={...base,width:600,length:600,assembly:{second:{...base,width:600,length:600},gapWidth:300,middleType:'recess'}};
+  const view=camera.getGarageCameraView(config,'left',1.6,1);
+  assert.equal(view.target[0],1.5);
+  assert.equal(view.position[0],0);
+  assert.ok(view.position[2]>3);
+  const crossing=(3-view.position[2])/(view.target[2]-view.position[2]);
+  const entryX=view.position[0]+crossing*(view.target[0]-view.position[0]);
+  const entryY=view.position[1]+crossing*(view.target[1]-view.position[1]);
+  assert.ok(entryX>-1.5 && entryX<1.5);
+  assert.ok(entryY<2);
+  assert.deepEqual(camera.getGarageCameraView(config,'left',1.6,0),camera.getGarageCameraView(config,'left',1.6,0,null,true));
+});
+test('left garage right wall uses the mirrored recess view for all roof and middle-space types', () => {
+  for(const roofType of ['dual-slope','dual-slope-front-back','slope-front','slope-back','slope-left','slope-right']) {
+    for(const middleType of ['carport','recess']) {
+      const config={...base,width:600,length:600,roofType,assembly:{second:{...base,width:600,length:600,roofType},gapWidth:200,middleType}};
+      const right=camera.getGarageCameraView(config,'left',0.4,1),left=camera.getGarageCameraView(config,'right',0.4,0);
+      assert.equal(left.position[0],right.position[0]);
+      assert.equal(left.position[2],right.position[2]);
+      assert.equal(left.target[0],-right.target[0]);
+      assert.ok([...left.position,...left.target,...right.position,...right.target].every(Number.isFinite));
+    }
+  }
+});
+test('inner-wall focus uses the edited garage offsets and the selected door, including unequal units', () => {
+  const door={id:'right-door',type:'door',wall:'left',width:100,height:200,x:50,y:0};
+  const config={...base,width:600,length:600,assembly:{second:{...base,width:400,length:400,elements:[door]},gapWidth:300,middleType:'recess'}};
+  const view=camera.getGarageCameraView(config,'left',1.6,1,door.id);
+  assert.deepEqual(view.target,[2.5,1,1.5]);
+  assert.equal(view.position[0],1);
+  assert.ok(view.position[2]>3);
+  assert.notDeepEqual(view.target,camera.getGarageCameraView(config,'left',1.6,0,door.id).target);
+});
+test('single-garage and PDF overview views retain their existing scene framing', () => {
+  const config={...base,width:600,length:600,assembly:{second:{...base,width:600,length:600},gapWidth:300,middleType:'recess'}};
+  for(const wall of ['front','back','left','right']) {
+    assert.deepEqual(camera.getGarageCameraView(base,wall,1.6,1),camera.getGarageCameraView(base,wall,1.6,0,null,true));
+    assert.deepEqual(camera.getGarageCameraView(config,wall,1.6,0,null,true),camera.getGarageCameraView(config,wall,1.6,1,null,true));
+  }
+  assert.equal(camera.getGarageCameraView(config,'left',1.6,1,null,true).target[0],-7.5);
+  assert.equal(camera.getGarageCameraView(config,'right',1.6,0,null,true).target[0],7.5);
+});

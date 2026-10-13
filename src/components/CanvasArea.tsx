@@ -11,10 +11,12 @@ import { Suspense, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { getThreePerformanceProfile } from '@/lib/threePerformance';
 import { getGarageCameraDistance } from '@/lib/garageMaterial';
+import { getGarageCameraView } from '@/lib/garageCamera';
 
 interface CanvasAreaProps {
   config: GarageConfig;
   activeGarage?: 0 | 1;
+  cameraOverview?: boolean;
   selectedWall: WallFace;
   activeDimId?: string | null;
   colors?: any[];
@@ -22,37 +24,16 @@ interface CanvasAreaProps {
   onExportAR?: (url: string) => void;
 }
 
-function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFace; config: GarageConfig, activeDimId?: string | null }) {
+function CameraRig({ selectedWall, config, activeGarage, activeDimId, overview }: { selectedWall: WallFace; config: GarageConfig; activeGarage: 0 | 1; activeDimId?: string | null; overview: boolean }) {
   const controlsRef = useRef<any>(null);
   const size = useThree(state => state.size);
-  const distance = getGarageCameraDistance(config, selectedWall, size.width / Math.max(size.height, 1));
-  const layout = getAssemblyLayout(config);
-  const sceneCenterX = layout.centerX / 100;
-  const sceneWidth = layout.width / 100, sceneLength = (layout.length + layout.frontProjection) / 100, sceneHeight = layout.height / 100;
-
+  const view = getGarageCameraView(config, selectedWall, size.width / Math.max(size.height, 1), activeGarage, activeDimId, overview);
+  const [cameraX, cameraY, cameraZ] = view.position;
+  const [targetX, targetY, targetZ] = view.target;
   useEffect(() => {
-    if (!controlsRef.current) return;
-    const w = sceneWidth, l = sceneLength, h = sceneHeight;
-    
-
-    let targetX = sceneCenterX;
-    let targetZ = 0;
-    let camX = sceneCenterX;
-    let camZ = 0;
-    
-    const dist = distance;
-    const zoomMultiplier = activeDimId ? 0.45 : 1; 
-
-    switch (selectedWall) {
-      case 'front': targetZ = l / 2; camZ = l / 2 + dist * zoomMultiplier; break;
-      case 'back': targetZ = -l / 2; camZ = -l / 2 - dist * zoomMultiplier; break;
-      case 'left': targetX = sceneCenterX - w / 2; camX = sceneCenterX - w / 2 - dist * zoomMultiplier; break;
-      case 'right': targetX = sceneCenterX + w / 2; camX = sceneCenterX + w / 2 + dist * zoomMultiplier; break;
-    }
-    controlsRef.current.setLookAt(camX, h / 2, camZ, targetX, h / 2, targetZ, true);
-  }, [selectedWall, sceneWidth, sceneLength, sceneHeight, activeDimId, sceneCenterX, distance]);
-
-  return <CameraControls ref={controlsRef} minPolarAngle={Math.PI / 8} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={2} maxDistance={Math.max(25, distance * 1.5)} makeDefault />;
+    controlsRef.current?.setLookAt(cameraX, cameraY, cameraZ, targetX, targetY, targetZ, true);
+  }, [cameraX, cameraY, cameraZ, targetX, targetY, targetZ]);
+  return <CameraControls ref={controlsRef} minPolarAngle={Math.PI / 8} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={2} maxDistance={Math.max(25, view.distance * 1.5)} makeDefault />;
 }
 
 function MeasurementArrow({ start, end, value }: { start: [number, number, number], end: [number, number, number], value: number }) {
@@ -219,7 +200,7 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
   return null;
 }
 
-export default function CanvasArea({ config, activeGarage = 0, selectedWall, activeDimId, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
+export default function CanvasArea({ config, activeGarage = 0, cameraOverview = false, selectedWall, activeDimId, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
   const renderProfile = useMemo(() => getThreePerformanceProfile(), []);
   const layout = getAssemblyLayout(config);
   const sharedRoof = getSharedRoofProfile(config);
@@ -275,7 +256,7 @@ export default function CanvasArea({ config, activeGarage = 0, selectedWall, act
 
       <ContactShadows key={contactShadowKey} position={[0, -0.01, 0]} opacity={0.4} scale={Math.max(30, shadowExtent * 3)} blur={3} far={7} resolution={renderProfile.contactShadowResolution} frames={1} />
 
-      <CameraRig selectedWall={selectedWall} config={config} activeDimId={activeDimId} />
+      <CameraRig selectedWall={selectedWall} config={config} activeGarage={activeGarage} activeDimId={activeDimId} overview={cameraOverview} />
       
       {isGeneratingAR && onExportAR && <ARExporter isGenerating={isGeneratingAR} onExport={onExportAR} />}
     </Canvas>

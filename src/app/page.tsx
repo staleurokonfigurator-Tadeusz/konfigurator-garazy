@@ -91,6 +91,7 @@ export default function Home() {
   const [appData, setAppData] = useState<any>(null);
   const [activeGarage, setActiveGarage] = useState<0 | 1>(0);
   const [selectedWall, setSelectedWall] = useState<WallFace>('front');
+  const [isCapturingOfferViews, setIsCapturingOfferViews] = useState(false);
   const [activeStep, setActiveStep] = useState(1);
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [activeDimId, setActiveDimId] = useState<string | null>(null);
@@ -271,7 +272,7 @@ export default function Home() {
           ) : appData?.activeType === 'trash' ? (
             <TrashCanvasArea config={config} selectedWall={selectedWall} activeDimId={activeDimId} colors={appData?.colors || []} isGeneratingAR={isGeneratingAR} onExportAR={handleExportAR} />
           ) : (
-            <CanvasArea activeGarage={editSecond ? 1 : 0}
+            <CanvasArea activeGarage={editSecond ? 1 : 0} cameraOverview={isCapturingOfferViews}
               config={config} 
               selectedWall={selectedWall} 
               colors={appData?.colors || []} 
@@ -341,6 +342,7 @@ export default function Home() {
                 setIsGeneratingAR={setIsGeneratingAR} 
                 isReadOnly={isReadOnly}
                 isOfferMode={isOfferMode}
+                onCaptureViewsChange={setIsCapturingOfferViews}
                 storeUrl={storeUrl || appData?.storeUrl}
                 requestARExport={requestOfferARExport}
                 activeDimId={activeDimId} 
