@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { FileDown, X } from 'lucide-react';
 import type { GarageConfig, WallFace } from '@/types';
 import { generateOfferPdf, type OfferCustomer } from '@/lib/offerPdf';
+import { parseManualOfferPrice } from '@/lib/offerPrice';
 import { createOfferInWordPress } from '@/lib/wordpressBridge';
 
 interface OfferDialogProps {
@@ -28,6 +29,8 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
   const [customer, setCustomer] = useState<OfferCustomer>(EMPTY_CUSTOMER);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
+  const [useManualPrice,setUseManualPrice] = useState(false);
+  const [manualPrice,setManualPrice] = useState('');
 
   const updateCustomer = <K extends keyof OfferCustomer>(key: K, value: OfferCustomer[K]) => {
     setCustomer(previous => ({ ...previous, [key]: value }));
@@ -56,6 +59,8 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
       setError('Adres e-mail ma nieprawidłowy format.');
       return;
     }
+    const selectedPrice = useManualPrice ? parseManualOfferPrice(manualPrice) : undefined;
+    if (selectedPrice === null) { setError('Podaj dodatnią cenę z maksymalnie dwoma miejscami po przecinku.'); return; }
     setGenerating(true);
     try {
       // Starsze lub rozpoczęte wcześniej konfiguracje mogły mieć włączoną wiatę,
@@ -72,7 +77,7 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
       if (!requestARExport) throw new Error('Eksporter modelu AR jest niedostępny.');
       const arModel = await requestARExport();
       const colorLabels = Object.fromEntries(colors.map(color => [color.id, color.label || color.id]));
-      const wordpressOffer = await createOfferInWordPress({ config: offerConfig, customer, estimatedPrice, storeUrl, arModel });
+      const wordpressOffer = await createOfferInWordPress({ config: offerConfig, customer, estimatedPrice, useManualPrice, manualPrice:selectedPrice, storeUrl, arModel });
       const finalCustomer = {
         ...customer,
         // QR zawsze wskazuje model GLB zapisany dla tej konkretnej oferty.
@@ -87,6 +92,7 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
         optionLabels: Object.fromEntries(addons.map(addon => [addon.id, addon.label || addon.id])),
         views,
         priceVerified: true,
+        priceSource: wordpressOffer.priceSource,
       });
     } catch (pdfError) {
       console.error(pdfError);
@@ -116,6 +122,11 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
               <option value="staleuro">StalEuro</option>
             </select>
           </label>
+          <section className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 md:col-span-2">
+            <p className="text-sm text-zinc-600">Cena z cennika: <strong>{estimatedPrice.toLocaleString('pl-PL',{minimumFractionDigits:2,maximumFractionDigits:2})} zł</strong></p>
+            <label className="mt-3 flex items-center gap-3 text-sm font-bold"><input type="checkbox" disabled={generating} checked={useManualPrice} onChange={event=>{setUseManualPrice(event.target.checked);setError('');if(event.target.checked && !manualPrice)setManualPrice(estimatedPrice>0 ? estimatedPrice.toFixed(2) : '');}} className="h-5 w-5 rounded" />Własna cena</label>
+            {useManualPrice && <label className="mt-3 block text-sm font-bold">Ostateczna cena oferty (zł)<input inputMode="decimal" maxLength={16} disabled={generating} value={manualPrice} onChange={event=>{setManualPrice(event.target.value);setError('');}} placeholder="Np. 25 000,00" className="mt-2 w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 font-normal" /><span className="mt-2 block text-xs font-normal text-zinc-600">Ta kwota zostanie zapisana w ofercie i pokazana w PDF.</span></label>}
+          </section>
           <label className="text-sm font-bold">Klient / osoba kontaktowa
             <input maxLength={120} value={customer.name} onChange={event => updateCustomer('name', event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-300 px-4 py-3 font-normal outline-none focus:border-orange-500" />
           </label>

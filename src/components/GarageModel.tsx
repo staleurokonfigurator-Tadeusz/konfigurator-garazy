@@ -24,6 +24,7 @@ interface GarageModelProps {
   config: GarageConfig;
   roofOnly?: boolean;
   hideRoof?: boolean;
+  recessWallsOnly?: boolean;
   sharedRoof?: SharedRoofProfile;
   worldX?: number;
   colors?: any[];
@@ -518,7 +519,7 @@ function AnimatedGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHor
   );
 }
 
-export default function GarageModel({ config, colors = [], roofOnly = false, hideRoof = false, sharedRoof, worldX = 0 }: GarageModelProps) {
+export default function GarageModel({ config, colors = [], roofOnly = false, hideRoof = false, recessWallsOnly = false, sharedRoof, worldX = 0 }: GarageModelProps) {
   const w = (config.width || 300) * 0.01;
   const l = (config.length || 500) * 0.01;
   const h = (config.height || 210) * 0.01;
@@ -759,12 +760,14 @@ export default function GarageModel({ config, colors = [], roofOnly = false, hid
     rotY: number,
     isSide = false,
     isLeftWall = false,
+    shapeOverride?: THREE.Shape,
   ) => {
+    if (isPir && shapeOverride) return null;
     const profile = (config.wallProfile || 'pionowe-t7') as SheetProfile;
     const depthDirection: 1 | -1 = isLeftWall ? -1 : 1;
     const surfaceZ = isLeftWall ? -0.002 : t + 0.002;
-    const shape = isSide ? createGarageSideShape(wall === 'right')
-      : wall === 'back' ? createGarageBackShape() : createGarageFrontShape();
+    const shape = shapeOverride || (isSide ? createGarageSideShape(wall === 'right')
+      : wall === 'back' ? createGarageBackShape() : createGarageFrontShape());
     const outline: ProfilePoint[] = shape.getPoints().map(p => [p.x - (isSide ? l/2 : 0), p.y - h/2]);
     if (outline.length > 1) outline.pop();
 
@@ -1125,6 +1128,19 @@ export default function GarageModel({ config, colors = [], roofOnly = false, hid
       {projection > 1 && <mesh position={[-projection-t+1,getH(wallX,l/2+projection-1)/2,right ? t+0.002 : -0.002]}><boxGeometry args={[0.008,getH(wallX,l/2+projection-1)-0.01,0.003]}/><meshStandardMaterial color={wallHex} roughness={0.8}/></mesh>}
     </group>;
   };
+  const createRecessHeaderShape = () => {
+    const s=new THREE.Shape(), bottom=Math.min(h,getH(-w/2,l/2),getH(w/2,l/2))-0.1;
+    s.moveTo(-w/2,bottom);s.lineTo(w/2,bottom);s.lineTo(w/2,getH(w/2,l/2));
+    if(isDualLeftRight && gableCenterX>-w/2 && gableCenterX<w/2)s.lineTo(gableCenterX,getH(gableCenterX,l/2));
+    s.lineTo(-w/2,getH(-w/2,l/2));s.closePath();return s;
+  };
+  if (recessWallsOnly) return <group ref={materialRoot} name="middleRecessWalls">
+    <mesh position={[0,0,l/2-t]} castShadow receiveShadow>{renderWallGeometry('front',createRecessHeaderShape())}{wallMaterialComponent}</mesh>
+    {renderWallRelief('front',[0,0,l/2-t],0,false,false,createRecessHeaderShape())}
+    <mesh position={[0,0,-l/2+t]} rotation={[0,Math.PI,0]} castShadow receiveShadow>{renderWallGeometry('back',createGarageBackShape())}{wallMaterialComponent}</mesh>
+    {renderWallRelief('back',[0,0,-l/2+t],Math.PI)}
+    {showCornerFlashings && <>{renderCornerTrim(-w/2+t/2,-l/2+t/2,getH(-w/2,-l/2))}{renderCornerTrim(w/2-t/2,-l/2+t/2,getH(w/2,-l/2))}</>}
+  </group>;
   return (
     <>
       

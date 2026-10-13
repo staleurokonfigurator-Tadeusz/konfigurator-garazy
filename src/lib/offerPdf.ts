@@ -28,6 +28,7 @@ export interface OfferPdfInput {
   optionLabels?: Record<string, string>;
   views: Partial<Record<WallFace, string>>;
   priceVerified?: boolean;
+  priceSource?: 'catalogue' | 'manual';
 }
 
 const wallNames: Record<WallFace, string> = {
@@ -489,13 +490,19 @@ function drawSharedAssemblyElevation(doc: import('jspdf').jsPDF, config: GarageC
       doc.rect(sx(offset+element.x-element.width/2),bottom-(element.y+element.height)*scale,element.width*scale,element.height*scale,'FD');
     }
   }
+  if(config.assembly?.middleType === 'recess') {
+    const left=layout.middleX-layout.gap/2,right=layout.middleX+layout.gap/2;
+    const top=[left,...(config.roofType==='dual-slope' && center>left && center<right ? [center] : []),right].map(world=>[sx(world),sy(sharedRoofHeightAt(profile,world))]);
+    const points=[...top,[sx(right),sy(layout.height-10)],[sx(left),sy(layout.height-10)]];
+    doc.setDrawColor(PDF_INK);doc.setFillColor('#e2e8f0');doc.lines(points.slice(1).map((point,index)=>[point[0]-points[index][0],point[1]-points[index][1]]),points[0][0],points[0][1],[1,1],'FD',true);
+  }
   doc.setDrawColor(PDF_INK);doc.setLineWidth(1.3);
   const roof=[profile.minX,...(config.roofType==='dual-slope' ? [center]:[]),profile.maxX];
   roof.slice(1).forEach((world,index)=>doc.line(sx(roof[index]),sy(sharedRoofHeightAt(profile,roof[index])),sx(world),sy(sharedRoofHeightAt(profile,world))));
   doc.setLineWidth(0.8);
   for (const world of [layout.middleX-layout.gap/2,layout.middleX+layout.gap/2]) doc.line(sx(world),sy(sharedRoofHeightAt(profile,world)),sx(world),bottom);
   doc.setFont(PDF_FONT,'normal');doc.setFontSize(8);doc.setTextColor(PDF_INK);
-  doc.text('GARAŻ 1',sx(layout.firstX),bottom+7,{align:'center'});doc.text('WIATA',sx(layout.middleX),bottom+7,{align:'center'});doc.text('GARAŻ 2',sx(layout.secondX),bottom+7,{align:'center'});
+  doc.text('GARAŻ 1',sx(layout.firstX),bottom+7,{align:'center'});doc.text(config.assembly?.middleType === 'recess' ? 'WNĘKA' : 'WIATA',sx(layout.middleX),bottom+7,{align:'center'});doc.text('GARAŻ 2',sx(layout.secondX),bottom+7,{align:'center'});
   doc.text('Wspólna szerokość dachu: '+layout.width+' cm',x,bottom+17);
   doc.text('Wysokość okapu: '+layout.height+' cm / przyrost wysokości dachu: 40 cm',x,bottom+24);
 }
@@ -526,7 +533,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   });
 
   // Strona otwierająca: czytelne dane klienta, jedna cena i wizualizacja bez rozciągania.
-  layout.header(config.assembly ? 'Dwa garaże z wiatą' : carportWidth > 0 ? 'Oferta na garaż z wiatą' : 'Oferta na garaż');
+  layout.header(config.assembly ? (config.assembly.middleType === 'recess' ? 'Dwa garaże z wnęką' : 'Dwa garaże z wiatą') : carportWidth > 0 ? 'Oferta na garaż z wiatą' : 'Oferta na garaż');
   layout.font(8.5, false, PDF_MUTED);
   doc.text(`Data przygotowania: ${formatDate(createdAt)}`, 16, 56);
   doc.text(`Ważna do: ${formatDate(validUntil)}`, 194, 56, { align: 'right' });
@@ -560,7 +567,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   while (doc.getTextWidth(price) > 54 && priceSize > 11) layout.font(--priceSize, true, '#ffffff');
   doc.text(price, 132, 98);
   layout.font(7.5, false, '#cbd5e1');
-  doc.text(input.priceVerified ? 'Obliczona według aktualnego cennika.' : 'Do potwierdzenia przez sprzedawcę.', 132, 109, { maxWidth: 54, lineHeightFactor: 1.4 });
+  doc.text(input.priceSource === 'manual' ? 'Cena ustalona indywidualnie przez sprzedawcę.' : input.priceVerified ? 'Obliczona według aktualnego cennika.' : 'Do potwierdzenia przez sprzedawcę.', 132, 109, { maxWidth: 54, lineHeightFactor: 1.4 });
 
   const heroY = 65 + customerHeight + 9;
   const hero = input.views.front || input.views[availableViews[0]];
@@ -594,7 +601,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   const assembly = getAssemblyLayout(config);
   const sharedRoof = getSharedRoofProfile(config);
   if (assembly.second) {
-    layout.page('Układ dwóch garaży i wiaty');
+    layout.page(config.assembly?.middleType === 'recess' ? 'Układ dwóch garaży i wnęki' : 'Układ dwóch garaży i wiaty');
     const scale = Math.min(150 / assembly.width, 108 / (assembly.length + assembly.frontProjection));
     const origin = 105 - assembly.width * scale / 2;
     const leftEdge = assembly.centerX - assembly.width / 2;
@@ -611,20 +618,21 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     }
     const middleX=origin+(assembly.middleX-assembly.gap/2-leftEdge)*scale;
     doc.setFillColor('#fff7ed');doc.setDrawColor('#ea580c');doc.rect(middleX,82+(assembly.length-assembly.middleLength)*scale,assembly.gap*scale,assembly.middleLength*scale,'FD');
-    layout.font(8,true);doc.text('WIATA',middleX+assembly.gap*scale/2,82+(assembly.length-assembly.middleLength/2)*scale,{align:'center'});
+    if (config.assembly?.middleType === 'recess') {doc.setDrawColor(PDF_INK);doc.setLineWidth(1.2);doc.line(middleX,82+(assembly.length-assembly.middleLength)*scale,middleX+assembly.gap*scale,82+(assembly.length-assembly.middleLength)*scale);}
+    layout.font(8,true);doc.text(config.assembly?.middleType === 'recess' ? 'WNĘKA' : 'WIATA',middleX+assembly.gap*scale/2,82+(assembly.length-assembly.middleLength/2)*scale,{align:'center'});
     layout.font(10,true);doc.text('Szerokość całego układu: ' + assembly.width + ' cm',16,64);
     doc.text('PRZÓD / WJAZD',105,82+(assembly.length+assembly.frontProjection)*scale+10,{align:'center'});
     if (sharedRoof) {doc.setDrawColor(PDF_INK);doc.setLineDashPattern([3,1],0);doc.rect(origin,82,assembly.width*scale,(assembly.length+assembly.frontProjection)*scale);doc.setLineDashPattern([],0);}
     layout.table(['ELEMENT','WYMIARY'],[
       ['Garaż 1',assembly.first.width+' × '+assembly.first.length+' × '+assembly.first.height+' cm'],
       ['Garaż 2',assembly.second.width+' × '+assembly.second.length+' × '+assembly.second.height+' cm'],
-      ['Wiata środkowa',assembly.gap+' × '+assembly.middleLength+' cm / dach: '+(roofNames[assembly.first.roofType] || assembly.first.roofType)+''],
+      [config.assembly?.middleType === 'recess' ? 'Wnęka środkowa (pełna ściana tylna)' : 'Wiata środkowa',assembly.gap+' × '+assembly.middleLength+' cm / dach: '+(roofNames[assembly.first.roofType] || assembly.first.roofType)+''],
       ['Wypusty PIR','Garaż 1: '+getFrontCanopy(assembly.first)+' cm / Garaż 2: '+getFrontCanopy(assembly.second)+' cm'],
     ],[55,123],218,'Układ - ciąg dalszy');
   }
   if (sharedRoof) {
     layout.page('Jeden dach nad całym układem');
-    layout.font(9,false,PDF_MUTED);doc.text('Wspólna kalenica lub jedna połać nad garażami i wiatą.',16,55);
+    layout.font(9,false,PDF_MUTED);doc.text(config.assembly?.middleType === 'recess' ? 'Wspólny dach nad garażami i wnęką z pełną ścianą tylną.' : 'Wspólna kalenica lub jedna połać nad garażami i wiatą.',16,55);
     drawPdfCard(doc,16,68,178,155,'#f8fafc');
     drawSharedAssemblyElevation(doc,input.config,28,98,154,80);
   }
@@ -793,7 +801,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   layout.font(11, true);
   doc.text('Ważne informacje', 24, notesY + 12);
   const terms = [
-    input.priceVerified
+    input.priceSource === 'manual' ? 'Ostateczna cena została ustalona indywidualnie przez sprzedawcę. Zakres oferty odpowiada konfiguracji opisanej w dokumencie.' : input.priceVerified
       ? 'Cena została obliczona według aktualnego cennika. Zakres oferty odpowiada konfiguracji opisanej w dokumencie.'
       : 'Cena ma charakter orientacyjny i wymaga potwierdzenia przez sprzedawcę.',
     'Kolory na ekranie i wydruku mogą różnić się od rzeczywistych. Odcień należy potwierdzić na próbniku.',

@@ -29,6 +29,7 @@ export function isGarageProjectConfig(value: unknown, nested = false): value is 
   if (c.assembly !== undefined) {
     const assembly = c.assembly as Record<string, unknown>;
     if (nested || !assembly || typeof assembly !== 'object' || Array.isArray(assembly)
+      || (assembly.middleType !== undefined && !['carport','recess'].includes(String(assembly.middleType)))
       || !finiteBetween(assembly.gapWidth, 200, 600) || !isGarageProjectConfig(assembly.second, true)) return false;
   }
   if (!Array.isArray(c.elements) || c.elements.length > 30) return false;

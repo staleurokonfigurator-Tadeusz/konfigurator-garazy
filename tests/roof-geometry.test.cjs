@@ -133,3 +133,21 @@ test('garage wall outlines meet the shared roof at every top edge, including a r
    });
  }
 });
+
+
+test('recess front fascia stays below every roof and leaves the space underneath open',()=>{
+ let header;
+ function find(node){if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='createRecessHeaderShape')header=node.initializer.getText(ast);ts.forEachChild(node,find);}find(ast);
+ // Extract just the pure shape producer; no React rendering is mocked.
+ const render=new Function('config','THREE',
+  'const w=config.width/100,l=config.length/100,h=config.height/100,slopeH=0.4,minX=-w/2,maxX=w/2,totalW=w,centerX=0,gableCenterX=0,sharedRoof=undefined,worldX=0;'+compile(heightCode)+compile('const shape='+header+';return {points:shape().getPoints(),heightAt:getH};'));
+ for(const roofType of ['dual-slope','dual-slope-front-back','slope-front','slope-back','slope-left','slope-right']) {
+  const {points,heightAt}=render({width:301,length:501,height:221,roofType},THREE);
+  const low=Math.min(...points.map(p=>p.y));
+  assert.ok(low>=1.9,'front opening was closed');assert.ok(Math.max(...points.map(p=>p.y))>low,'zero thickness header');
+  for(const p of points){assert.ok(Number.isFinite(p.x)&&Number.isFinite(p.y));assert.ok(p.y<=heightAt(p.x,2.505)+0.000001,'fascia rises above roof');}
+  const outline=points.map(p=>[p.x,p.y-2.21/2]);outline.pop();
+  const geometry=build(3.01,2.21,'poziome-t7',[],1,outline,[0,2.21/2]),position=geometry.getAttribute('position');
+  for(let i=0;i<position.count;i++){const y=position.getY(i)+2.21/2;assert.ok(y>=low-0.000001 && y<=heightAt(position.getX(i),2.505)+0.000001,'rib outside fascia');}geometry.dispose();
+ }
+});

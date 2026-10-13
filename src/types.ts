@@ -28,7 +28,7 @@ export interface CarportSettings {
 
 export interface GarageConfig {
   // A composition contains exactly two independently configured garages.
-  assembly?: { second: GarageConfig; gapWidth: number };
+  assembly?: { second: GarageConfig; gapWidth: number; middleType?: 'carport' | 'recess' };
   frontCanopyWalls?: boolean; // Two side returns; included in PIR.
   frontCanopy?: number; // Additional roof projection in cm; PIR only.
   buildingMaterial?: 'sheet' | 'pir';

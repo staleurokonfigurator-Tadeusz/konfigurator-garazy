@@ -11,6 +11,7 @@ interface Props {
 }
 export default function AssemblyPanel({config,setConfig,activeGarage,onSelect,isReadOnly,enabled: enabledFeature}: Props) {
   const layout = getAssemblyLayout(config);
+  const recess = config.assembly?.middleType === 'recess';
   const toggle = (enabled: boolean) => {
     setConfig(previous => {
       if (Boolean(previous.assembly) === enabled) return previous;
@@ -37,14 +38,20 @@ export default function AssemblyPanel({config,setConfig,activeGarage,onSelect,is
             <span className="h-8 w-8 rounded-t-md border-2 border-zinc-700 bg-zinc-200" />
             {enabled && <><span className="h-6 w-7 border-t-4 border-zinc-700 border-x-2"/><span className="h-8 w-8 rounded-t-md border-2 border-zinc-700 bg-zinc-200"/></>}
           </div>
-          <span className="block text-sm font-bold">{enabled ? 'Dwa garaże + wiata' : 'Jeden garaż'}</span>
+          <span className="block text-sm font-bold">{enabled ? (recess ? 'Dwa garaże + wnęka' : 'Dwa garaże + wiata') : 'Jeden garaż'}</span>
         </button>)}
       </div>
       {config.assembly && <>
+        <div className="grid grid-cols-2 gap-2" role="group" aria-label="Przestrzeń między garażami">
+          {(['carport','recess'] as const).map(type=><button key={type} disabled={isReadOnly} aria-pressed={(config.assembly?.middleType || 'carport')===type} onClick={()=>setConfig(previous=>previous.assembly ? {...previous,assembly:{...previous.assembly,middleType:type}} : previous)} className={`min-h-20 rounded-xl border-2 p-3 text-left text-sm font-bold ${(config.assembly?.middleType || 'carport')===type ? 'border-[var(--theme)] bg-orange-50' : 'border-zinc-200 bg-zinc-50'}`}>
+            {type==='carport' ? 'Wiata otwarta' : 'Wnęka z tylną ścianą'}
+            <span className="mt-1 block text-xs font-normal text-zinc-600">{type==='carport' ? 'Dach i słupy, otwarta z przodu i z tyłu.' : 'Otwarty przód, boki garaży i pełna ściana z tyłu.'}</span>
+          </button>)}
+        </div>
         <div className="rounded-xl border border-orange-200 bg-orange-50 p-3">
-          <div className="mb-3 flex items-center justify-between gap-2 text-sm font-bold"><span>Wiata pomiędzy garażami</span><EditableDimension label="Wiata środkowa — szerokość" value={layout.gap} min={200} max={600} readOnly={isReadOnly} onChange={setGap}/></div>
+          <div className="mb-3 flex items-center justify-between gap-2 text-sm font-bold"><span>{recess ? 'Wnęka pomiędzy garażami' : 'Wiata pomiędzy garażami'}</span><EditableDimension label="Wiata środkowa — szerokość" value={layout.gap} min={200} max={600} readOnly={isReadOnly} onChange={setGap}/></div>
           {!isReadOnly && <input aria-label="Wiata środkowa — szerokość" type="range" min={200} max={600} step={1} value={layout.gap} onChange={event=>setGap(Number(event.target.value))} className="w-full" />}
-          <p className="mt-2 text-xs leading-relaxed text-zinc-600">Długość: {layout.middleLength} cm, według krótszego garażu. {hasSharedAssemblyRoof(config) ? 'Wysokość dopasowana do wspólnego dachu.' : 'Wysokość dopasowana do niższego garażu.'} Cena według obecnej stawki za m² wiaty.</p>
+          <p className="mt-2 text-xs leading-relaxed text-zinc-600">Długość: {layout.middleLength} cm, według krótszego garażu. {hasSharedAssemblyRoof(config) ? 'Wysokość dopasowana do wspólnego dachu.' : 'Wysokość dopasowana do niższego garażu.'} Cena według obecnej stawki za m² wiaty. {recess && 'Ściana tylna ma materiał, kolor i przetłoczenia garażu 1.'}</p>
         </div>
         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Wybierz garaż do ustawienia">
           {([0,1] as const).map(index=><button key={index} aria-pressed={activeGarage===index} onClick={()=>onSelect(index)} className={`min-h-12 rounded-xl border p-3 text-sm font-bold ${activeGarage===index ? 'bg-zinc-900 text-white border-zinc-900':'bg-white border-zinc-300'}`}>Garaż {index+1} · {index ? 'prawy':'lewy'}</button>)}

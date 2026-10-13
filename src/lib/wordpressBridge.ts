@@ -16,6 +16,7 @@ export interface WordPressOfferResult {
   id: number;
   offerNumber: string;
   verifiedPrice: number;
+  priceSource?: 'catalogue' | 'manual';
   publicUrl: string;
 }
 
@@ -56,6 +57,8 @@ export function createOfferInWordPress(input: {
   estimatedPrice: number;
   storeUrl?: string;
   arModel: Blob;
+  useManualPrice?: boolean;
+  manualPrice?: number;
 }): Promise<WordPressOfferResult> {
   const targetOrigin = getTrustedParentOrigin(input.storeUrl);
   if (!targetOrigin || window.parent === window) {
@@ -92,6 +95,7 @@ export function createOfferInWordPress(input: {
         id: Number(offer.id),
         offerNumber: String(offer.offerNumber),
         verifiedPrice: Number(offer.verifiedPrice),
+        priceSource: offer.priceSource === 'manual' ? 'manual' : 'catalogue',
         publicUrl: String(offer.publicUrl || ''),
       });
     };
@@ -104,6 +108,8 @@ export function createOfferInWordPress(input: {
       config: input.config,
       customer: input.customer,
       estimatedPrice: input.estimatedPrice,
+      useManualPrice: input.useManualPrice === true,
+      manualPrice: input.useManualPrice ? input.manualPrice : undefined,
       arModel: input.arModel,
     }, targetOrigin);
   });

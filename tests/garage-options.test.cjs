@@ -304,3 +304,16 @@ test('front/back roofs and single garages keep their existing geometry and indep
   }
   assert.equal(assembly.getSharedRoofProfile(fullConfig),null);
 });
+
+
+test('manual quote prices accept Polish decimals and reject missing, invalid or silently rounded amounts',()=>{
+ const {parseManualOfferPrice}=load('src/lib/offerPrice.ts');
+ for(const [input,expected] of [['25 000,50',25000.5],['25000.50',25000.5],['0,01',0.01],['100000000',100000000]])assert.equal(parseManualOfferPrice(input),expected);
+ for(const input of ['',' ','0','-1','Infinity','NaN','1e5','12.345','1,2,3','100000000.01','+123'])assert.equal(parseManualOfferPrice(input),null,input);
+});
+test('recess configurations persist, retain catalogue pricing and reject unknown middle-space types',()=>{
+ const config={...fullConfig,assembly:{second:{...fullConfig},gapWidth:300,middleType:'recess'}};
+ assert.equal(storage.parseProjectFile(JSON.stringify({version:1,id:'recess',name:'Wnęka',config})).config.assembly.middleType,'recess');
+ assert.equal(price(config),price({...config,assembly:{...config.assembly,middleType:'carport'}}));
+ assert.equal(storage.isGarageProjectConfig({...config,assembly:{...config.assembly,middleType:'invalid'}}),false);
+});

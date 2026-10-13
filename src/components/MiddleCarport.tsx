@@ -26,6 +26,7 @@ export default function MiddleCarport({config,colors}: {config: GarageConfig;col
   }),[oak,walnut]);
   useEffect(()=>()=>textures.forEach(texture=>texture.dispose()),[textures]);
   const sharedRoof = getSharedRoofProfile(config);
+  const recess = config.assembly?.middleType === 'recess';
   const height = layout.middleHeight / 100;
   const roofHeight = (x: number,z: number) => {
     if (sharedRoof) return sharedRoofHeightAt(sharedRoof,layout.middleX+x*100)/100;
@@ -49,12 +50,13 @@ export default function MiddleCarport({config,colors}: {config: GarageConfig;col
   const postMaterial = <meshStandardMaterial color={posts.wood ? '#ffffff':posts.hex} map={posts.wood? textures[posts.walnut?1:0]:undefined} {...getSheetAppearance(posts.wood,posts.type)} />;
   return <group name="middleCarport" position={[layout.middleX/100,0,(layout.length-layout.middleLength)/200]}>
     {!sharedRoof && <GarageModel config={roofConfig} colors={colors} roofOnly />}
-    {([-1,1] as const).flatMap(side=>postRows.map((z,index)=>{
+    {recess && <GarageModel config={roofConfig} colors={colors} recessWallsOnly sharedRoof={sharedRoof || undefined} worldX={layout.middleX} />}
+    {!recess && ([-1,1] as const).flatMap(side=>postRows.map((z,index)=>{
       const postHeight=roofHeight(side*(width/2-0.07),z)-0.09;
       return <mesh key={`${side}-${index}`} castShadow position={[side*(width/2-0.07),postHeight/2,z]}><boxGeometry args={[0.08,postHeight,0.08]}/>{postMaterial}</mesh>;
     }))}
-    {([-1,1] as const).flatMap(side=>postRows.slice(1).map((z,index)=>beam(new THREE.Vector3(side*(width/2-0.07),roofHeight(side*(width/2-0.07),postRows[index])-0.09,postRows[index]),new THREE.Vector3(side*(width/2-0.07),roofHeight(side*(width/2-0.07),z)-0.09,z),side+'-'+index)))}
-    {[-depth/2,depth/2].flatMap(z=>crossPoints.slice(1).map((x,index)=>beam(new THREE.Vector3(crossPoints[index],roofHeight(crossPoints[index],z)-0.09,z),new THREE.Vector3(x,roofHeight(x,z)-0.09,z),z+'-'+index)))}
+    {!recess && ([-1,1] as const).flatMap(side=>postRows.slice(1).map((z,index)=>beam(new THREE.Vector3(side*(width/2-0.07),roofHeight(side*(width/2-0.07),postRows[index])-0.09,postRows[index]),new THREE.Vector3(side*(width/2-0.07),roofHeight(side*(width/2-0.07),z)-0.09,z),side+'-'+index)))}
+    {!recess && [-depth/2,depth/2].flatMap(z=>crossPoints.slice(1).map((x,index)=>beam(new THREE.Vector3(crossPoints[index],roofHeight(crossPoints[index],z)-0.09,z),new THREE.Vector3(x,roofHeight(x,z)-0.09,z),z+'-'+index)))}
 
 
   </group>;
