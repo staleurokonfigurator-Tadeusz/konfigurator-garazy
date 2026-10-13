@@ -528,7 +528,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
                 </div>
                 {!isReadOnly && (() => {
                   const gateWallWidth = gate.wall === 'front' || gate.wall === 'back' ? config.width : config.length;
-                  return <input type="range" min={-(gateWallWidth / 2) + gate.width/2} max={(gateWallWidth / 2) - gate.width/2} step={1} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />;
+                  return <input type="range" min={Math.ceil(-(gateWallWidth / 2) + gate.width/2)} max={Math.floor((gateWallWidth / 2) - gate.width/2)} step={1} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />;
                 })()}
               </div>
 
