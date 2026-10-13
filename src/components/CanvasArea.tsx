@@ -233,7 +233,8 @@ export default function CanvasArea({ config, activeGarage = 0, selectedWall, act
     elements: config.elements,
     assembly: config.assembly,
     projection: config.frontCanopy,
-  }), [config.width, config.length, config.height, config.roofType, config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight, config.elements, config.assembly, config.frontCanopy]);
+    canopyWalls: config.frontCanopyWalls,
+  }), [config.width, config.length, config.height, config.roofType, config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight, config.elements, config.assembly, config.frontCanopy, config.frontCanopyWalls]);
 
   return (
     <Canvas
