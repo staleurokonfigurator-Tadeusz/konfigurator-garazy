@@ -51,10 +51,6 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
 
   const handleGenerate = async () => {
     setError('');
-    if (!customer.name.trim()) {
-      setError('Podaj imię i nazwisko klienta lub osoby kontaktowej.');
-      return;
-    }
     if (customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) {
       setError('Adres e-mail ma nieprawidłowy format.');
       return;
@@ -127,19 +123,19 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
             <label className="mt-3 flex items-center gap-3 text-sm font-bold"><input type="checkbox" disabled={generating} checked={useManualPrice} onChange={event=>{setUseManualPrice(event.target.checked);setError('');if(event.target.checked && !manualPrice)setManualPrice(estimatedPrice>0 ? estimatedPrice.toFixed(2) : '');}} className="h-5 w-5 rounded" />Własna cena</label>
             {useManualPrice && <label className="mt-3 block text-sm font-bold">Ostateczna cena oferty (zł)<input inputMode="decimal" maxLength={16} disabled={generating} value={manualPrice} onChange={event=>{setManualPrice(event.target.value);setError('');}} placeholder="Np. 25 000,00" className="mt-2 w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 font-normal" /><span className="mt-2 block text-xs font-normal text-zinc-600">Ta kwota zostanie zapisana w ofercie i pokazana w PDF.</span></label>}
           </section>
-          <label className="text-sm font-bold">Klient / osoba kontaktowa
+          <label className="text-sm font-bold">Klient / osoba kontaktowa (opcjonalnie)
             <input maxLength={120} value={customer.name} onChange={event => updateCustomer('name', event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-300 px-4 py-3 font-normal outline-none focus:border-orange-500" />
           </label>
           <label className="text-sm font-bold">Firma (opcjonalnie)
             <input maxLength={120} value={customer.company} onChange={event => updateCustomer('company', event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-300 px-4 py-3 font-normal outline-none focus:border-orange-500" />
           </label>
-          <label className="text-sm font-bold">E-mail
+          <label className="text-sm font-bold">E-mail (opcjonalnie)
             <input type="email" maxLength={160} value={customer.email} onChange={event => updateCustomer('email', event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-300 px-4 py-3 font-normal outline-none focus:border-orange-500" />
           </label>
-          <label className="text-sm font-bold">Telefon
+          <label className="text-sm font-bold">Telefon (opcjonalnie)
             <input maxLength={40} value={customer.phone} onChange={event => updateCustomer('phone', event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-300 px-4 py-3 font-normal outline-none focus:border-orange-500" />
           </label>
-          <label className="text-sm font-bold md:col-span-2">Adres
+          <label className="text-sm font-bold md:col-span-2">Adres (opcjonalnie)
             <input maxLength={240} value={customer.address} onChange={event => updateCustomer('address', event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-300 px-4 py-3 font-normal outline-none focus:border-orange-500" />
           </label>
           <label className="text-sm font-bold">Ważność oferty

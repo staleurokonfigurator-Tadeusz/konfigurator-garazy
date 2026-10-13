@@ -35,6 +35,9 @@ export function updateGarageElement(config: GarageConfig, id: string, updates: P
   const original = config.elements.find(el => el.id === id);
   if (!original) return null;
   const updated = { ...original, ...updates };
+  if (updates.height !== undefined && updates.y === undefined && ['window', 'pvc-window', 'skylight'].includes(updated.type)) {
+    updated.y = Math.max(0, Math.min(config.height - updated.height - 5, original.y + (original.height - updated.height) / 2));
+  }
   const wallWidth = updated.wall === 'front' || updated.wall === 'back' ? config.width : config.length;
   const positionChanged = updates.x !== undefined || updates.y !== undefined;
   const geometryChanged = positionChanged || updates.width !== undefined || updates.height !== undefined || updates.wall !== undefined;

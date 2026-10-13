@@ -317,3 +317,60 @@ test('recess configurations persist, retain catalogue pricing and reject unknown
  assert.equal(price(config),price({...config,assembly:{...config.assembly,middleType:'carport'}}));
  assert.equal(storage.isGarageProjectConfig({...config,assembly:{...config.assembly,middleType:'invalid'}}),false);
 });
+
+test('two 290cm up-and-over gates fit a 6m front while two 300cm gates do not', () => {
+  const initial={...base,width:600,elements:[gate('first',290,0),gate('second',200,0)]};
+  const next=options.updateGarageElement(initial,'second',{width:290});
+  assert.ok(next);
+  assert.ok(next.elements.every(el=>collision.checkWallBounds(collision.getElementRect(el),600,210)));
+  assert.equal(collision.checkCollision(...next.elements.map(collision.getElementRect)),false);
+  assert.deepEqual(next.elements.map(el=>el.width),[290,290]);
+  assert.equal(options.updateGarageElement({...initial,elements:[gate('first',300,0),gate('second',200,0)]},'second',{width:300}),null);
+  assert.equal(initial.elements[0].x,0);
+});
+test('adding a second gate repacks a centred neighbour and keeps fixed openings intact', () => {
+  const door={id:'door',type:'door',wall:'back',width:100,height:200,x:0,y:0};
+  const candidate={...base,width:600,elements:[gate('first',290,0),door,gate('new',200,0)]};
+  const next=options.updateGarageElement(candidate,'new',{width:200,height:200});
+  assert.ok(next);
+  assert.equal(next.elements[1],door);
+  const gates=next.elements.filter(el=>el.type==='gate');
+  assert.equal(collision.checkCollision(...gates.map(collision.getElementRect)),false);
+  assert.ok(gates.every(el=>collision.checkWallBounds(collision.getElementRect(el),600,210)));
+});
+test('290cm up-and-over gate keeps the 3m tariff and PIR includes exactly one', () => {
+  const rates={...pricing,gate_up_3x2:1234};
+  const gates=[gate('a',290,-147.5),gate('b',290,147.5)];
+  const config={...base,width:600,elements:gates};
+  assert.equal(price(config,rates)-price({...config,elements:[]},rates),2468);
+  assert.equal(price({...config,buildingMaterial:'pir'},rates)-price({...config,buildingMaterial:'pir',elements:[]},rates),1234);
+  assert.equal(price({...config,elements:[gate('old',300,0)]},rates)-price({...config,elements:[]},rates),1234);
+});
+
+test('windows and skylights find horizontal space without dropping below the middle of the wall', () => {
+  const wallGate=gate('first',250,0);
+  for (const [type,height,width] of [['window',60,80],['pvc-window',60,80],['skylight',30,100]]) {
+    const opening={id:'new',type,wall:'front',width,height,x:0,y:(210-height)/2};
+    const next=options.updateGarageElement({...base,width:600,elements:[wallGate,opening]},'new',{width,height});
+    assert.ok(next);
+    const placed=next.elements[1];
+    assert.equal(placed.y+placed.height/2,105);
+    assert.equal(collision.checkCollision(collision.getElementRect(placed),collision.getElementRect(wallGate)),false);
+    assert.ok(collision.checkWallBounds(collision.getElementRect(placed),600,210));
+  }
+});
+test('a fully occupied centre row rejects new windows and skylights instead of placing them on the floor', () => {
+  const obstruction={id:'existing',type:'window',wall:'front',width:590,height:60,x:0,y:75};
+  for (const type of ['window','skylight']) {
+    const opening={id:'new',type,wall:'front',width:80,height:30,x:0,y:90};
+    assert.equal(collision.findValidPosition(opening,[obstruction],600,210),null);
+  }
+});
+
+test('changing window dimensions retains its vertical centre and does not block tall window presets', () => {
+  const opening={id:'window',type:'window',wall:'back',width:80,height:60,x:0,y:75};
+  const next=options.updateGarageElement({...base,height:210,elements:[opening]},'window',{width:40,height:180});
+  assert.ok(next);
+  assert.equal(next.elements[0].y,15);
+  assert.ok(collision.checkWallBounds(collision.getElementRect(next.elements[0]),300,210));
+});

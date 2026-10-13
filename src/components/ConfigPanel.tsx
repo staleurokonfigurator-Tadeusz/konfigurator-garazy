@@ -3,7 +3,6 @@
 import { GarageConfig, RoofType, WallFace, GarageElement, GateType, SheetProfile } from '@/types';
 import { Home, Maximize, PaintBucket, Plus, Trash2, BoxSelect, Layers, ChevronDown, Edit2, Settings, Smartphone, Eye, FileText } from 'lucide-react';
 import { isAddonAvailable, isReinforcedFrameAddon, cleanUnavailableOptions, updateGarageElement } from '@/lib/garageOptions';
-import { findValidPosition } from '@/lib/collision';
 import { v4 as uuidv4 } from 'uuid';
 import React, { useMemo, useState, Dispatch, SetStateAction } from 'react';
 import dynamic from 'next/dynamic';
@@ -163,7 +162,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
       type, 
       wall, 
       x: startX, 
-      y: type === 'window' || type === 'pvc-window' ? 100 : (type === 'skylight' ? config.height - 40 : 0), 
+      y: ['window', 'pvc-window', 'skylight'].includes(type) ? (config.height - height) / 2 : 0, 
       width, 
       height, 
       gateType: type === 'gate' ? 'up-and-over' : undefined, 
@@ -172,12 +171,13 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
       hingeSide: 'left' 
     };
 
-    const validPos = findValidPosition(newElement, config.elements, wallWidth, config.height);
-    if (validPos) {
-      newElement.x = validPos.x; newElement.y = validPos.y;
-      setConfig(prev => ({ ...prev, elements: [...prev.elements, newElement] }));
+    const candidate = { ...config, elements: [...config.elements, newElement] };
+    const placed = updateGarageElement(candidate, newElement.id, { width, height });
+    if (placed) {
+      setConfig(cleanUnavailableOptions(placed, customAddons));
+      setElementError('');
       setSelectedWall(wall);
-    } else { alert("Brak miejsca na tej ścianie!"); }
+    } else { setElementError('Brak miejsca na tej ścianie. Zmień wymiary lub rozmieszczenie otworów.'); }
   };
 
   const updateElement = (id: string, updates: Partial<GarageElement>) => {
@@ -442,6 +442,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
                   const nType = e.target.value as GateType;
                   let nWidth = gate.width;
                   if (nType === 'sectional' && nWidth < 300) nWidth = 300;
+                  if (nType === 'up-and-over' && nWidth === 300) nWidth = 290;
                   setSelectedWall(gate.wall);
                   updateElement(gate.id, { gateType: nType, width: nWidth, height: 200, isOpen: false, hasDoor: false }); 
                 }} className="text-sm border-zinc-300 rounded-lg p-1 bg-zinc-50 text-zinc-900 font-bold disabled:opacity-80">
@@ -471,33 +472,34 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
                   className="w-full border-zinc-300 rounded-lg p-2 text-sm bg-zinc-50 text-zinc-900 font-bold disabled:opacity-80 focus:ring-2 focus:ring-[var(--theme)]"
                 >
                   {(() => {
-                    const otherGatesWidth = config.elements.filter(e => e.wall === gate.wall && e.id !== gate.id).reduce((sum, e) => sum + e.width + 20, 0);
+                    const otherGatesWidth = config.elements.filter(e => e.wall === gate.wall && e.id !== gate.id).reduce((sum, e) => sum + e.width + 5, 0);
                     const gateWallWidth = gate.wall === 'front' || gate.wall === 'back' ? config.width : config.length;
-                    const availableWidth = gateWallWidth - otherGatesWidth;
+                    const availableWidth = gateWallWidth - 10 - otherGatesWidth;
                     
                     if (gate.gateType === 'up-and-over') {
                       return (
                         <>
-                          <option value="200x200" disabled={200 + 20 > availableWidth}>Wys: 200 x Szer: 200 cm</option>
-                          <option value="300x200" disabled={300 + 20 > availableWidth}>Wys: 200 x Szer: 300 cm</option>
-                          <option value="400x200" disabled={400 + 20 > availableWidth}>Wys: 200 x Szer: 400 cm</option>
-                          <option value="500x200" disabled={500 + 20 > availableWidth}>Wys: 200 x Szer: 500 cm</option>
+                          <option value="200x200" disabled={200 > availableWidth}>Wys: 200 x Szer: 200 cm</option>
+                          <option value="290x200" disabled={290 > availableWidth}>Wys: 200 x Szer: 290 cm</option>
+                          {gate.width === 300 && <option value="300x200">Wys: 200 x Szer: 300 cm (zapisany projekt)</option>}
+                          <option value="400x200" disabled={400 > availableWidth}>Wys: 200 x Szer: 400 cm</option>
+                          <option value="500x200" disabled={500 > availableWidth}>Wys: 200 x Szer: 500 cm</option>
                         </>
                       );
                     } else if (gate.gateType === 'swing') {
                       return (
                         <>
-                          <option value="200x200" disabled={200 + 20 > availableWidth}>Wys: 200 x Szer: 200 cm</option>
-                          <option value="300x200" disabled={300 + 20 > availableWidth}>Wys: 200 x Szer: 300 cm</option>
-                          <option value="400x200" disabled={400 + 20 > availableWidth}>Wys: 200 x Szer: 400 cm</option>
+                          <option value="200x200" disabled={200 > availableWidth}>Wys: 200 x Szer: 200 cm</option>
+                          <option value="300x200" disabled={300 > availableWidth}>Wys: 200 x Szer: 300 cm</option>
+                          <option value="400x200" disabled={400 > availableWidth}>Wys: 200 x Szer: 400 cm</option>
                         </>
                       );
                     } else {
                       return (
                         <>
-                          <option value="300x200" disabled={300 + 20 > availableWidth}>Wys: 200 x Szer: 300 cm</option>
-                          <option value="400x200" disabled={400 + 20 > availableWidth}>Wys: 200 x Szer: 400 cm</option>
-                          <option value="500x200" disabled={500 + 20 > availableWidth}>Wys: 200 x Szer: 500 cm</option>
+                          <option value="300x200" disabled={300 > availableWidth}>Wys: 200 x Szer: 300 cm</option>
+                          <option value="400x200" disabled={400 > availableWidth}>Wys: 200 x Szer: 400 cm</option>
+                          <option value="500x200" disabled={500 > availableWidth}>Wys: 200 x Szer: 500 cm</option>
                         </>
                       );
                     }
@@ -873,13 +875,13 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
       <div className="mt-8 bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl text-white">
         {!isReadOnly && (
           <div className="flex flex-col gap-2 mb-4">
-            <label className="text-sm font-semibold text-zinc-300">Województwo <span className="text-red-500">*</span></label>
+            <label className="text-sm font-semibold text-zinc-300">Województwo {!isOfferMode && <span className="text-red-500">*</span>}</label>
             <select 
               value={region} 
               onChange={(e) => setRegion(e.target.value)} 
               className="p-3 rounded-lg text-zinc-900 bg-white border-none outline-none font-medium focus:ring-2" 
               style={{accentColor: 'var(--theme)'}} 
-              required 
+              required={!isOfferMode} 
             >
               <option value="" disabled>Wybierz z listy...</option>
               {WOJEWODZTWA.map(w => <option key={w} value={w}>{w}</option>)}

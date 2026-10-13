@@ -66,10 +66,25 @@ export function findValidPosition(
 
   if (isValid(currentRect)) return { x: element.x, y: element.y };
 
-  // Simple grid search for a valid spot
+  // Windows and skylights keep their chosen height: a collision moves them
+  // sideways, rather than silently dropping the opening to floor level.
+  const keepHeight = ['window', 'pvc-window', 'skylight'].includes(element.type);
   const step = 10;
-  for (let y = 0; y <= wallHeight - element.height; y += step) {
-    for (let x = -wallWidth / 2 + element.width / 2; x <= wallWidth / 2 - element.width / 2; x += step) {
+  const rows = [element.y];
+  if (!keepHeight) for (let y = 0; y <= wallHeight - element.height; y += step) if (y !== element.y) rows.push(y);
+  for (const y of rows) {
+    const edges = [
+      -wallWidth / 2 + element.width / 2 + 5,
+      wallWidth / 2 - element.width / 2 - 5,
+      ...wallElems.flatMap(other => {
+        const rect = getElementRect(other);
+        return [rect.left - element.width / 2 - 5, rect.right + element.width / 2 + 5];
+      }),
+    ].sort((a, b) => Math.abs(a - element.x) - Math.abs(b - element.x));
+    for (const x of edges) {
+      if (isValid(getElementRect({ ...element, x, y }))) return { x, y };
+    }
+    for (let x = -wallWidth / 2 + element.width / 2 + 5; x <= wallWidth / 2 - element.width / 2 - 5; x += step) {
       const testRect = {
         left: x - element.width / 2,
         right: x + element.width / 2,

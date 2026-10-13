@@ -61,7 +61,7 @@ export function calculateGarageUnit(config: GarageConfig, appData: GaragePricing
         if (!includedGate) {
           if (el.gateType === 'up-and-over') {
             if (el.width === 200) totalBase += safeNum(pricing.gate_up_2x2);
-            else if (el.width === 300) totalBase += safeNum(pricing.gate_up_3x2);
+            else if (el.width === 290 || el.width === 300) totalBase += safeNum(pricing.gate_up_3x2);
             else if (el.width === 400) totalBase += safeNum(pricing.gate_up_4x2);
             else if (el.width === 500) totalBase += safeNum(pricing.gate_up_5x2);
           } else if (el.gateType === 'sectional') {
