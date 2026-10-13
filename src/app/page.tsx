@@ -115,7 +115,8 @@ export default function Home() {
     const savedConfigBase64 = params.get('load_config');
     const storeUrl = params.get('store_url');
     // Stan zależy od parametrów strony osadzającej i musi zostać odczytany po hydracji.
-    setIsOfferMode(params.get('offer_mode') === '1');
+    const offerMode = params.get('offer_mode') === '1';
+    setIsOfferMode(offerMode);
 
     if (storeUrl) {
       const decodedStoreUrl = decodeURIComponent(storeUrl).replace(/\/$/, "");
@@ -140,8 +141,8 @@ export default function Home() {
       } catch { setConfig(initial); }
       return;
     }
-    if (!payload.activeType || payload.activeType === 'garage') {
-      const key = projectStorageKey(storeUrl || payload.storeUrl || '', params.get('offer_mode') === '1');
+    if (offerMode && (!payload.activeType || payload.activeType === 'garage')) {
+      const key = projectStorageKey(storeUrl || payload.storeUrl || '', true);
       let draft: GarageConfig | null = null;
       try { draft = readDraft(window.localStorage, key); } catch { setDraftError(true); }
       setConfig(cleanUnavailableOptions(draft || initial, payload.addons));
@@ -150,10 +151,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!projectKey || isReadOnly) return;
+    if (!isOfferMode || !projectKey || isReadOnly) return;
     try { writeDraft(window.localStorage, projectKey, config); setDraftError(false); }
     catch { setDraftError(true); }
-  }, [config, projectKey, isReadOnly]);
+  }, [config, projectKey, isReadOnly, isOfferMode]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const setGarageConfig = useCallback<React.Dispatch<React.SetStateAction<GarageConfig>>>(next => {
