@@ -19,23 +19,11 @@ const material = load('src/lib/garageMaterial.ts');
 const extras = load('src/lib/garageExtras.ts');
 const collision = load('src/lib/collision.ts');
 const joints = load('src/components/PirPanelJoints.tsx');
-const panelSource = fs.readFileSync(path.join(root, 'src/components/ConfigPanel.tsx'), 'utf8');
-const parsed = ts.createSourceFile('ConfigPanel.tsx', panelSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-let priceCallback;
-function visit(node) {
-  if (ts.isVariableDeclaration(node) && node.name.getText(parsed) === 'calculatedPrice') {
-    priceCallback = node.initializer.arguments[0].getText(parsed);
-  }
-  ts.forEachChild(node, visit);
-}
-visit(parsed);
-assert.ok(priceCallback);
-// Execute the callback used by the UI itself, rather than duplicating the price formula.
-const calculate = new Function('config','pricing','customAddons','appData','dbColors','isPirGarage','getPirPricePerM2','isAddonAvailable','getCarportSides','getCarportSettings','getCarportLayout','isAnchoringAddon','getAnchoringPrice',
-  compile('const safeNum = (val: unknown) => { const num = Number(val); return isNaN(num) ? 0 : num; }; return ('+priceCallback+')();'));
+const actualPricing=load('src/lib/garagePricing.ts');
+const assembly=load('src/lib/garageAssembly.ts');
 const base = {width:300,length:500,height:210,roofType:'dual-slope',elements:[],extraOptions:[],gutters:false};
 const pricing = {sqm_single_v:150,sqm_dual_v:200,gate_up_2x2:800,gutter_v:10,roof_tile_v:20,integrated_carport_m2_v:100};
-const price = (config, rates=pricing, addons=[]) => calculate(config,rates,addons,{baseConfig:{h:210}},[],material.isPirGarage,material.getPirPricePerM2,options.isAddonAvailable,extras.getCarportSides,extras.getCarportSettings,extras.getCarportLayout,extras.isAnchoringAddon,extras.getAnchoringPrice);
+const price = (config, rates=pricing, addons=[]) => actualPricing.calculateGaragePrice(config,{pricing:rates,addons,baseConfig:{h:210},colors:[]});
 
 test('legacy configs remain sheet; standard roof prices are preserved', () => {
   assert.equal(material.isPirGarage(base),false);
@@ -201,10 +189,10 @@ test('independent carports change footprint, camera and price without changing i
   assert.ok(2*phoneDistance*Math.tan(50*Math.PI/360)*1.65 >= 12);
 });
 
-test('dimension editing rejects empty and invalid values and keeps existing limits and 10cm increments', () => {
+test('dimension editing rejects empty and invalid values and keeps existing limits and 1cm increments', () => {
   for(const text of ['', ' ', 'wrong', 'Infinity']) assert.equal(extras.normalizeDimension(text,200,3000),null);
   assert.equal(extras.normalizeDimension('390,0',200,3000),390);
-  assert.equal(extras.normalizeDimension('305',200,3000),310);
+  assert.equal(extras.normalizeDimension('305',200,3000),305);
   assert.equal(extras.normalizeDimension('10',200,3000),200);
   assert.equal(extras.normalizeDimension('9999',200,3000),3000);
   assert.equal(extras.normalizeDimension('9999',100,500),500);
@@ -223,7 +211,7 @@ test('PDF diagrams draw separate unequal carports and keep every roof orientatio
   const pdfAst=ts.createSourceFile('offerPdf.ts',pdfSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
   const names=['getCarportWidthCm','getPdfCarports','drawDimensionPlan','drawElevationPlan'];
   const funcs=pdfAst.statements.filter(node=>ts.isFunctionDeclaration(node)&&names.includes(node.name?.text)).map(node=>node.getText(pdfAst)).join('\n');
-  const drawings=new Function('getCarportLayout','getCarportSides','getCarportSettings',compile("const PDF_FONT='helvetica', PDF_INK='#333333', PDF_MUTED='#64748b', faceNames={front:'front',back:'back',left:'left',right:'right'};"+funcs+'; return {drawDimensionPlan,drawElevationPlan};'))(extras.getCarportLayout,extras.getCarportSides,extras.getCarportSettings);
+  const drawings=new Function('getCarportLayout','getCarportSides','getCarportSettings','getFrontCanopy',compile("const PDF_FONT='helvetica', PDF_INK='#333333', PDF_MUTED='#64748b', faceNames={front:'front',back:'back',left:'left',right:'right'};"+funcs+'; return {drawDimensionPlan,drawElevationPlan};'))(extras.getCarportLayout,extras.getCarportSides,extras.getCarportSettings,assembly.getFrontCanopy);
   const {jsPDF}=require('jspdf');
   const config={...base,width:600,hasCarport:true,carportSide:'both',carportLeft:{width:150},carportRight:{width:350}};
   const doc=new jsPDF();const rectangles=[];const original=doc.rect.bind(doc);
@@ -239,4 +227,44 @@ test('PDF diagrams draw separate unequal carports and keep every roof orientatio
     drawings.drawElevationPlan(doc,{...config,roofType},wall,wall,20,130,160,42);
   }
   assert.ok(doc.output('arraybuffer').byteLength>1000);
+});
+
+test('two garages price independently, include one gate per PIR garage and count only outer side carports',()=>{
+  const first={...base,buildingMaterial:'pir',elements:[gate('a',300,0,'sectional')],hasCarport:true,carportSide:'both',carportLeft:{width:111},carportRight:{width:222}};
+  const second={...base,width:401,length:603,buildingMaterial:'pir',elements:[gate('b',300,0,'sectional')],hasCarport:true,carportSide:'both',carportLeft:{width:333},carportRight:{width:121}};
+  const config={...first,assembly:{second,gapWidth:301}};
+  const layout=assembly.getAssemblyLayout(config);
+  assert.equal(layout.width,300+401+301+111+121);
+  assert.equal(layout.middleLength,500);
+  assert.equal(layout.firstZ+first.length/2,layout.secondZ+second.length/2);
+  const expected=price({...first,carportSide:'left'})+price({...second,carportSide:'right'})+301*500/10000*100;
+  assert.equal(price(config),expected);
+  assert.ok(material.getGarageCameraDistance(config,'front',0.5)>material.getGarageCameraDistance(first,'front',0.5));
+});
+test('canopy and its side walls are included in PIR; client-supplied canopy prices are ignored',()=>{
+  const config={...base,buildingMaterial:'pir',frontCanopy:51,frontCanopyWalls:true,frontCanopyPrice:123.45};
+  assert.equal(assembly.getFrontCanopy(config),51);assert.equal(price(config),19500);
+  assert.equal(price({...config,frontCanopyPrice:1000000}),19500);
+  assert.equal(price({...config,frontCanopyWalls:false}),19500);
+  assert.equal(assembly.getFrontCanopy({...config,buildingMaterial:'sheet'}),0);
+});
+test('reinforced 60x40 frame is included in every PIR garage but charged normally for sheet',()=>{
+  for(const type of ['fixed','pct_base','pct_total','m2','mb']) {
+    const addon={id:'profil-wzmocniony-60x40_181',label:'Profil wzmocniony 60×40',price:10,type};
+    const config={...base,extraOptions:[addon.id]};
+    assert.equal(price({...config,buildingMaterial:'pir'},pricing,[addon]),19500);
+    assert.ok(price(config,pricing,[addon])>3000);
+    assert.equal(price({...config,buildingMaterial:'pir',assembly:{second:{...config,buildingMaterial:'pir'},gapWidth:300}},pricing,[addon]),40500);
+  }
+});
+test('composition files retain both units and reject nesting, invalid bounds and invalid side-wall settings',()=>{
+  const first={...fullConfig,width:301,length:501,height:211,frontCanopy:51,frontCanopyPrice:123.45};
+  const config={...first,assembly:{second:{...first,width:401,length:601,height:221},gapWidth:301}};
+  const file={version:1,id:'assembly',name:'Dwa garaże',config};
+  assert.deepEqual(storage.parseProjectFile(JSON.stringify(file)).config,config);
+  for(const invalid of [null,{gapWidth:601,second:first},{gapWidth:199,second:first},{gapWidth:301,second:{...first,assembly:{gapWidth:301,second:first}}}]) assert.equal(storage.isGarageProjectConfig({...first,assembly:invalid}),false);
+  assert.equal(storage.isGarageProjectConfig({...first,frontCanopy:151}),false);
+  assert.equal(storage.isGarageProjectConfig({...first,frontCanopyWalls:'yes'}),false);
+  assert.equal(extras.normalizeDimension('211',200,350),211);
+  assert.equal(extras.normalizeDimension('501',300,3000),501);
 });

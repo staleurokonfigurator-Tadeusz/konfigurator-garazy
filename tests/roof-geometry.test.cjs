@@ -72,3 +72,41 @@ test('tile relief keeps finite geometry within desktop and phone detail budgets'
     geometry.dispose();
   }
 });
+
+// Exercise the actual roof renderer and its transforms, including asymmetric overhangs.
+let renderRoofArrow;
+function visitRoof(node) {
+  if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='renderRoof')renderRoofArrow=node.initializer.getText(ast);
+  ts.forEachChild(node,visitRoof);
+}
+visitRoof(ast);
+const heightCode=model.slice(model.indexOf('  const rt = String(config.roofType'),model.indexOf('  const createGarageFrontShape'));
+const roofCode=ts.transpileModule('const roofRender='+renderRoofArrow+'; return roofRender();',{fileName:'roof.tsx',compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+const roofRender=new Function('config','THREE','require',
+  "const exports={};const w=config.width/100,l=config.length/100,h=config.height/100,t=0.1,slopeH=0.4,roofContactOverlap=0.005,minX=-w/2,maxX=w/2,totalW=w,centerX=0;const colors=[],materialTextures={},woodColor=undefined,woodNormal=undefined,roofTileTexture=undefined,isPir=true,isRoofTile=false,showRoofFlashings=false,showGutters=true;const RoofSheetRelief='sheet',PirPanelJoints='joints',RoofTileRelief='tiles';const resolveColor=()=>({hex:'#777777',isWood:false,textureUrl:''}),getColorAppearance=()=>({roughness:0.7}),getFrontCanopy=c=>Math.min(150,Math.max(0,c.frontCanopy||0));"+compile(heightCode)+roofCode);
+function roofBounds(tree) {
+  const bounds=new THREE.Box3();
+  function walk(node,matrix) {
+    if(!node)return;if(Array.isArray(node)){node.forEach(child=>walk(child,matrix));return;}
+    const props=node.props || {};let next=matrix;
+    if(node.type==='group'||node.type==='mesh') {
+      next=matrix.clone().multiply(new THREE.Matrix4().compose(new THREE.Vector3(...(props.position || [0,0,0])),new THREE.Quaternion().setFromEuler(new THREE.Euler(...(props.rotation || [0,0,0]))),new THREE.Vector3(1,1,1)));
+    }
+    if(node.type==='boxGeometry') {
+      const [w,h,l]=props.args;
+      for(const x of [-w/2,w/2])for(const y of [-h/2,h/2])for(const z of [-l/2,l/2])bounds.expandByPoint(new THREE.Vector3(x,y,z).applyMatrix4(matrix));
+    }
+    walk(props.children,next);
+  }
+  walk(tree,new THREE.Matrix4());return bounds;
+}
+test('PIR roof projection moves only the front edge for all six roof types and keeps geometry finite',()=>{
+  for(const roofType of ['dual-slope','dual-slope-front-back','slope-front','slope-back','slope-left','slope-right'])for(const frontCanopy of [1,51,150]) {
+    const base={width:301,length:501,height:211,buildingMaterial:'pir',roofType};
+    const before=roofBounds(roofRender(base,THREE,require)),after=roofBounds(roofRender({...base,frontCanopy},THREE,require));
+    for(const value of [...after.min.toArray(),...after.max.toArray()])assert.ok(Number.isFinite(value));
+    assert.ok(Math.abs(after.min.z-before.min.z)<0.00001,roofType+' back edge moved');
+    assert.ok(Math.abs(after.max.z-before.max.z-frontCanopy/100)<0.00001,roofType+' front projection wrong');
+    assert.ok(Math.abs(after.min.x-before.min.x)<0.00001);assert.ok(Math.abs(after.max.x-before.max.x)<0.00001);
+  }
+});

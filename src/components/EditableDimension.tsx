@@ -5,7 +5,7 @@ import { Pencil } from 'lucide-react';
 import { normalizeDimension } from '@/lib/garageExtras';
 
 interface Props { label: string; value: number; min: number; max: number; step?: number; readOnly?: boolean; onChange: (value: number) => void }
-export default function EditableDimension({ label, value, min, max, step = 10, readOnly, onChange }: Props) {
+export default function EditableDimension({ label, value, min, max, step = 1, readOnly, onChange }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const cancelled = useRef(false);

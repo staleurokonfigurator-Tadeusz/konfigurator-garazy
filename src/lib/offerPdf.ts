@@ -1,3 +1,4 @@
+import { getAssemblyLayout, getFrontCanopy } from './garageAssembly';
 import { getCarportLayout, getCarportSides, getCarportSettings } from './garageExtras';
 import type { GarageConfig, GarageElement, WallFace } from '@/types';
 import {
@@ -92,7 +93,7 @@ function elementDescription(element: GarageElement) {
 function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: number, y: number, maxWidth: number, maxHeight = 70) {
   const carportWidthCm = getCarportWidthCm(config);
   const totalWidthCm = config.width + carportWidthCm;
-  const ratio = Math.min(maxWidth / totalWidthCm, maxHeight / config.length);
+  const ratio = Math.min(maxWidth / totalWidthCm, maxHeight / (config.length+getFrontCanopy(config)));
   const width = totalWidthCm * ratio;
   const garageWidth = config.width * ratio;
   const carports = getPdfCarports(config);
@@ -188,6 +189,17 @@ function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: 
     }
   };
 
+  if (getFrontCanopy(config)) {
+    doc.setDrawColor(100,116,139);doc.setLineDashPattern([2,1],0);
+    doc.rect(x,y+length,width,getFrontCanopy(config)*ratio);
+    doc.setLineDashPattern([],0);doc.setFontSize(6.5);
+    if (config.frontCanopyWalls !== false) {
+      doc.setLineWidth(0.7);
+      doc.line(garageX,y+length,garageX,y+length+getFrontCanopy(config)*ratio);
+      doc.line(garageX+garageWidth,y+length,garageX+garageWidth,y+length+getFrontCanopy(config)*ratio);
+    }
+    doc.text('Wypust PIR: '+getFrontCanopy(config)+' cm',x+width/2,y+length+getFrontCanopy(config)*ratio+6,{align:'center'});
+  }
   config.elements.forEach(markOpening);
   doc.setTextColor(30, 30, 30);
   doc.setLineWidth(0.2);
@@ -467,7 +479,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   });
 
   // Strona otwierająca: czytelne dane klienta, jedna cena i wizualizacja bez rozciągania.
-  layout.header(carportWidth > 0 ? 'Oferta na garaż z wiatą' : 'Oferta na garaż');
+  layout.header(config.assembly ? 'Dwa garaże z wiatą' : carportWidth > 0 ? 'Oferta na garaż z wiatą' : 'Oferta na garaż');
   layout.font(8.5, false, PDF_MUTED);
   doc.text(`Data przygotowania: ${formatDate(createdAt)}`, 16, 56);
   doc.text(`Ważna do: ${formatDate(validUntil)}`, 194, 56, { align: 'right' });
@@ -518,7 +530,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     doc.text(`Dach ${roofNames[config.roofType] || config.roofType}\nŚciany: ${config.buildingMaterial === 'pir' ? materialLabel(config) : profileLabel(config.wallProfile)} / ${color(config.wallColor)}`, 24, heroY + 22, { maxWidth: 158, lineHeightFactor: 1.45 });
   }
   const metricY = heroY + heroHeight + 7;
-  const metrics = [['SZEROKOŚĆ GARAŻU', config.width], ['DŁUGOŚĆ', config.length], ['WYSOKOŚĆ ŚCIAN', config.height]] as const;
+  const metrics = [['SZEROKOŚĆ UKŁADU', getAssemblyLayout(config).width], ['DŁUGOŚĆ', getAssemblyLayout(config).length], ['WYSOKOŚĆ ŚCIAN', getAssemblyLayout(config).height]] as const;
   metrics.forEach(([label, value], index) => {
     const x = 16 + index * 61;
     drawPdfCard(doc, x, metricY, 56, 24);
@@ -532,8 +544,40 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     doc.text('Szczegółowa specyfikacja, rysunki i model AR na kolejnych stronach.', 16, metricY + 31);
   }
 
+  const assembly = getAssemblyLayout(config);
+  if (assembly.second) {
+    layout.page('Układ dwóch garaży i wiaty');
+    const scale = Math.min(150 / assembly.width, 108 / (assembly.length + assembly.frontProjection));
+    const origin = 105 - assembly.width * scale / 2;
+    const leftEdge = assembly.centerX - assembly.width / 2;
+    doc.setLineWidth(0.5);
+    for (const [index, unit, unitX] of [[1, assembly.first, assembly.firstX], [2, assembly.second, assembly.secondX]] as const) {
+      const x = origin + (unitX - unit.width/2 - leftEdge) * scale;
+      const y = 82 + (assembly.length-unit.length)*scale;
+      doc.setDrawColor(PDF_INK);doc.setFillColor('#e2e8f0');doc.rect(x,y,unit.width*scale,unit.length*scale,'FD');
+      layout.font(8,true);doc.text('GARAŻ ' + index,x+unit.width*scale/2,y+unit.length*scale/2,{align:'center'});
+      const side = index === 1 ? 'left' : 'right';
+      const outer = getCarportLayout(unit)[side];
+      if (outer) {doc.setFillColor('#f1f5f9');doc.rect(index===1 ? x-outer*scale : x+unit.width*scale,y,outer*scale,unit.length*scale,'FD');}
+      if (getFrontCanopy(unit)) {doc.setLineDashPattern([2,1],0);doc.rect(x,82+assembly.length*scale,unit.width*scale,getFrontCanopy(unit)*scale);doc.setLineDashPattern([],0);}
+    }
+    const middleX=origin+(assembly.middleX-assembly.gap/2-leftEdge)*scale;
+    doc.setFillColor('#fff7ed');doc.setDrawColor('#ea580c');doc.rect(middleX,82+(assembly.length-assembly.middleLength)*scale,assembly.gap*scale,assembly.middleLength*scale,'FD');
+    layout.font(8,true);doc.text('WIATA',middleX+assembly.gap*scale/2,82+(assembly.length-assembly.middleLength/2)*scale,{align:'center'});
+    layout.font(10,true);doc.text('Szerokość całego układu: ' + assembly.width + ' cm',16,64);
+    doc.text('PRZÓD / WJAZD',105,82+(assembly.length+assembly.frontProjection)*scale+10,{align:'center'});
+    layout.table(['ELEMENT','WYMIARY'],[
+      ['Garaż 1',assembly.first.width+' × '+assembly.first.length+' × '+assembly.first.height+' cm'],
+      ['Garaż 2',assembly.second.width+' × '+assembly.second.length+' × '+assembly.second.height+' cm'],
+      ['Wiata środkowa',assembly.gap+' × '+assembly.middleLength+' cm / dach: '+(roofNames[assembly.first.roofType] || assembly.first.roofType)+''],
+      ['Wypusty PIR','Garaż 1: '+getFrontCanopy(assembly.first)+' cm / Garaż 2: '+getFrontCanopy(assembly.second)+' cm'],
+    ],[55,123],218,'Układ - ciąg dalszy');
+  }
+  for (const [unitIndex, config] of (assembly.second ? [assembly.first,assembly.second] : [assembly.first]).entries()) {
+  const carportWidth = getCarportWidthCm(config);
+  const unitLabel = assembly.second ? ' · Garaż ' + (unitIndex+1) : '';
   // Specyfikacja i otwory nie mają sztywnej wysokości: tabela przechodzi na kolejną stronę.
-  layout.page('Specyfikacja i wyposażenie');
+  layout.page('Specyfikacja i wyposażenie' + unitLabel);
   layout.font(9, false, PDF_MUTED);
   doc.text('Zakres konfiguracji stanowiący podstawę tej oferty.', 16, 55);
   const builtInOptions = new Set(['roofTile', 'cornerFlashings', 'roofFlashings']);
@@ -547,6 +591,8 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   const details = [
     ['Wymiary garażu', `${config.width} x ${config.length} x ${config.height} cm (szer. x dł. x wys. ścian)`],
     ['Materiał ścian i dachu', materialLabel(config)],
+    ['Profil wzmocniony 60×40',config.buildingMaterial === 'pir' ? 'W cenie PIR' : 'Według wybranych opcji'],
+    ['Wypust przed garażem', getFrontCanopy(config) ? `${getFrontCanopy(config)} cm / w cenie PIR / ściany boczne: ${config.frontCanopyWalls !== false ? 'tak' : 'nie'}` : 'Nie'],
     ['Typ dachu', roofNames[config.roofType] || config.roofType],
     ['Pokrycie dachu', config.buildingMaterial === 'pir' ? `${materialLabel(config)} / ${profileLabel('pionowe-t7')}` : config.extraOptions?.includes('roofTile') ? 'Blachodachówka' : `Blacha trapezowa / ${profileLabel('pionowe-t7')}`],
     ['Ściany', `${config.buildingMaterial === 'pir' ? materialLabel(config) : profileLabel(config.wallProfile)}\nKolor: ${color(config.wallColor)}`],
@@ -561,7 +607,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     ['Opcje dodatkowe', extraOptions.length ? extraOptions.join(', ') : 'Brak dodatkowych opcji'],
   ];
   let specY = layout.table(['PARAMETR', 'WYBRANY WARIANT'], details, [55, 123], 63, 'Specyfikacja - ciąg dalszy') + 12;
-  if (specY + 33 > PDF_BOTTOM) { layout.page('Bramy, drzwi i okna'); specY = 59; }
+  if (specY + 33 > PDF_BOTTOM) { layout.page('Bramy, drzwi i okna' + unitLabel); specY = 59; }
   specY = layout.section('Bramy, drzwi, okna i świetliki', specY);
   if (config.elements.length) {
     const rows = config.elements.map((element, index) => {
@@ -570,7 +616,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
       return [String(index + 1).padStart(2, '0'), elementDescription(element) + (config.buildingMaterial === 'pir' && element === config.elements.find(item => item.type === 'gate') ? ' / W cenie PIR' : ''), faceNames[element.wall],
         `${element.width} x ${element.height} cm`, `L: ${Math.round(left)} cm\nP: ${Math.round(element.y)} cm`];
     });
-    specY = layout.table(['LP.', 'ELEMENT / WARIANT', 'ŚCIANA', 'SZER. x WYS.', 'POŁOŻENIE'], rows, [12, 60, 23, 38, 45], specY, 'Elementy - ciąg dalszy');
+    specY = layout.table(['LP.', 'ELEMENT / WARIANT', 'ŚCIANA', 'SZER. x WYS.', 'POŁOŻENIE'], rows, [12, 60, 23, 38, 45], specY, 'Elementy - ciąg dalszy' + unitLabel);
     if (specY + 8 <= PDF_BOTTOM) {
       layout.font(7.5, false, PDF_MUTED);
       doc.text('L - od lewej krawędzi ściany; P - od posadzki. Szczegóły pokazano na rysunkach.', 16, specY + 7);
@@ -580,11 +626,11 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     doc.text('Nie wybrano bram, drzwi, okien ani świetlików.', 16, specY + 4);
   }
 
-  layout.page('Rzut z góry');
+  layout.page('Rzut z góry' + unitLabel);
   layout.font(9, false, PDF_MUTED);
   doc.text('Rozmieszczenie otworów oraz podstawowe wymiary w centymetrach.', 16, 55);
   drawPdfCard(doc, 16, 66, 178, 126, '#f8fafc');
-  const planScale = Math.min(142 / (config.width + carportWidth), 78 / config.length);
+  const planScale = Math.min(142 / (config.width + carportWidth), 78 / (config.length+getFrontCanopy(config)));
   drawDimensionPlan(doc, config, 105 - (config.width + carportWidth) * planScale / 2, 89, 142, 78);
   layout.font(8, true, PDF_MUTED);
   doc.text('PRZÓD GARAŻU', 105, 89 + config.length * planScale + 17, { align: 'center' });
@@ -596,7 +642,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   layout.font(7.5, false, PDF_MUTED);
   doc.text('Rysunki poglądowe. Wymiary produkcyjne wymagają zatwierdzenia technicznego.', 16, 269);
 
-  layout.page('Cztery elewacje');
+  layout.page('Cztery elewacje' + unitLabel);
   layout.font(9, false, PDF_MUTED);
   doc.text('Położenie bram, drzwi, okien i świetlików dla każdej ściany.', 16, 55);
   [[16, 65, 85, 87], [109, 65, 85, 87], [16, 158, 85, 84], [109, 158, 85, 84]].forEach(([x, y, w, h]) => drawPdfCard(doc, x, y, w, h));
@@ -606,9 +652,29 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   drawElevationPlan(doc, config, 'left', 'Elewacja lewa', 120, 187, 66, 38);
   drawTechnicalLegend(doc, 244, true);
 
+  if (getFrontCanopy(config)) {
+    layout.page('Wypust dachu PIR' + unitLabel);
+    layout.font(10,true);doc.text('Wysunięcie przed ścianą frontową: '+getFrontCanopy(config)+' cm',16,62);
+    const scale = Math.min(142/(config.length+getFrontCanopy(config)),68/(config.height+40));
+    const x=27,y=91, wallLength=config.length*scale, wallHeight=config.height*scale, projection=getFrontCanopy(config)*scale;
+    doc.setDrawColor(PDF_INK);doc.setLineWidth(0.6);doc.rect(x,y,wallLength,wallHeight);
+    if (config.frontCanopyWalls !== false) {doc.setFillColor('#fff7ed');doc.rect(x+wallLength,y,projection,wallHeight,'FD');}
+    doc.setLineWidth(1.5);doc.line(x,y,x+wallLength+projection,y);
+    doc.setLineWidth(0.2);doc.line(x+wallLength,y-8,x+wallLength+projection,y-8);
+    layout.font(8,true);doc.text(getFrontCanopy(config)+' cm',x+wallLength+projection/2,y-11,{align:'center'});
+    layout.font(9);doc.text('Ściana frontowa / brama',x+wallLength,y+wallHeight+8,{align:'right'});
+    layout.table(['PARAMETR','USTALENIE'],[
+      ['Długość garażu',config.length+' cm'],['Wypust PIR',getFrontCanopy(config)+' cm'],
+      ['Długość wraz z wypustem',(config.length+getFrontCanopy(config))+' cm (bez standardowych okapów)'],
+      ['Ściany boczne',config.frontCanopyWalls !== false ? 'Tak' : 'Nie'],['Dopłata','0 zł - w cenie PIR'],
+    ],[55,123],192,'Wypust - ciąg dalszy');
+    layout.font(8,false,PDF_MUTED);doc.text('Schemat wysunięcia dachu. Konstrukcja i wymiary produkcyjne do zatwierdzenia.',16,264);
+  }
   if (carportWidth > 0) {
-    layout.page('Wiata zintegrowana');
+    layout.page('Wiata zintegrowana' + unitLabel);
     drawCarportTechnicalPage(doc, config);
+  }
+
   }
 
   for (let index = 0; index < availableViews.length; index += 2) {

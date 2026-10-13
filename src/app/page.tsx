@@ -10,6 +10,8 @@ import { v4 as uuidv4 } from 'uuid';
 import dynamic from 'next/dynamic';
 import { Eye, X } from 'lucide-react';
 import Script from 'next/script';
+import AssemblyPanel from '@/components/AssemblyPanel';
+import { standaloneUnit } from '@/lib/garageAssembly';
 import ProjectToolbar from '@/components/ProjectToolbar';
 import { projectStorageKey, readDraft, writeDraft } from '@/lib/projectStorage';
 import { cleanUnavailableOptions } from '@/lib/garageOptions';
@@ -87,6 +89,7 @@ const CONFIG_STEPS = [
 export default function Home() {
   const [config, setConfig] = useState<GarageConfig>(INITIAL_CONFIG);
   const [appData, setAppData] = useState<any>(null);
+  const [activeGarage, setActiveGarage] = useState<0 | 1>(0);
   const [selectedWall, setSelectedWall] = useState<WallFace>('front');
   const [activeStep, setActiveStep] = useState(1);
   const [isReadOnly, setIsReadOnly] = useState(false);
@@ -156,6 +159,16 @@ export default function Home() {
   const setGarageConfig = useCallback<React.Dispatch<React.SetStateAction<GarageConfig>>>(next => {
     setConfig(previous => cleanUnavailableOptions(typeof next === 'function' ? next(previous) : next, appData?.addons || []));
   }, [appData]);
+  const editSecond = activeGarage === 1 && Boolean(config.assembly);
+  const editedConfig = editSecond ? config.assembly!.second : config;
+  const setEditedConfig: React.Dispatch<React.SetStateAction<GarageConfig>> = next => setGarageConfig(previous => {
+    if (editSecond && previous.assembly) {
+      const second = standaloneUnit(cleanUnavailableOptions(typeof next === 'function' ? next(previous.assembly.second) : next, appData?.addons || []), 'right');
+      return {...previous,roofType:second.roofType,assembly:{...previous.assembly,second}};
+    }
+    const unit = cleanUnavailableOptions(typeof next === 'function' ? next(previous) : next, appData?.addons || []);
+    return previous.assembly ? {...standaloneUnit(unit,'left'),assembly:{...previous.assembly,second:{...previous.assembly.second,roofType:unit.roofType}}} : unit;
+  });
   const resetProject = () => {
     setGarageConfig({ ...initialProject.current, elements: initialProject.current.elements.map(element => ({...element, id:uuidv4()})) });
     setSelectedWall('front'); setActiveDimId(null); setActiveStep(1);
@@ -255,7 +268,7 @@ export default function Home() {
           ) : appData?.activeType === 'trash' ? (
             <TrashCanvasArea config={config} selectedWall={selectedWall} activeDimId={activeDimId} colors={appData?.colors || []} isGeneratingAR={isGeneratingAR} onExportAR={handleExportAR} />
           ) : (
-            <CanvasArea 
+            <CanvasArea activeGarage={editSecond ? 1 : 0}
               config={config} 
               selectedWall={selectedWall} 
               colors={appData?.colors || []} 
@@ -309,10 +322,15 @@ export default function Home() {
               <TrashConfigPanel config={config} setConfig={setConfig} selectedWall={selectedWall} setSelectedWall={setSelectedWall} appData={appData} isGeneratingAR={isGeneratingAR} setIsGeneratingAR={setIsGeneratingAR} />
             ) : (
               <>
-              {!isReadOnly && projectKey && <ProjectToolbar config={config} storageKey={projectKey} onLoad={next=>{setGarageConfig(next);setActiveDimId(null);setSelectedWall('front');}} onReset={resetProject} draftError={draftError} />}
-              <ConfigPanel 
-                config={config} 
-                setConfig={setGarageConfig}
+              {isOfferMode && !isReadOnly && projectKey && <ProjectToolbar config={config} storageKey={projectKey} onLoad={next=>{setGarageConfig(next);setActiveDimId(null);setSelectedWall('front');}} onReset={resetProject} draftError={draftError} />}
+
+              <ConfigPanel key={editSecond ? 'second' : 'first'}
+                assemblyControls={(appData?.features?.twoGarages !== false || config.assembly) && (config.hasCarport || config.assembly) && <AssemblyPanel config={config} setConfig={setGarageConfig} activeGarage={editSecond ? 1 : 0} onSelect={index => {setActiveGarage(index);setActiveDimId(null);setSelectedWall('front');}} enabled={appData?.features?.twoGarages !== false} isReadOnly={isReadOnly} />}
+                onDisableCarports={() => {setGarageConfig({...standaloneUnit(config),hasCarport:false});setActiveGarage(0);setActiveDimId(null);}}
+                config={editedConfig}
+                assemblyConfig={config}
+                outerCarportSide={config.assembly ? (editSecond ? 'right' : 'left') : undefined}
+                setConfig={setEditedConfig}
                 selectedWall={selectedWall} 
                 setSelectedWall={setSelectedWall} 
                 appData={appData} 

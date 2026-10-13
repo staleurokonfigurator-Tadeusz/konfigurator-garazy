@@ -70,3 +70,8 @@ export function updateGarageElement(config: GarageConfig, id: string, updates: P
   return null;
 }
 
+
+export function isReinforcedFrameAddon(addon: Pick<PricedAddon, 'id' | 'label'>): boolean {
+  const text = (addon.id + ' ' + (addon.label || '')).toLowerCase();
+  return /wzmocnion/.test(text) && /60\s*[x×]\s*40/.test(text);
+}

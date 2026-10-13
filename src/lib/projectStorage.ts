@@ -7,7 +7,7 @@ const colorFields = ['wallColor','roofColor','gateColor','doorColor','windowColo
 const profileFields = ['wallProfile','roofProfile','gateProfile','doorProfile'];
 const finiteBetween = (value: unknown, min: number, max: number) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 
-export function isGarageProjectConfig(value: unknown): value is GarageConfig {
+export function isGarageProjectConfig(value: unknown, nested = false): value is GarageConfig {
   if (!value || typeof value !== 'object') return false;
   const c = value as Record<string, unknown>;
   if (!finiteBetween(c.width, 200, 3000) || !finiteBetween(c.length, 300, 3000) || !finiteBetween(c.height, 200, 350)) return false;
@@ -23,6 +23,13 @@ export function isGarageProjectConfig(value: unknown): value is GarageConfig {
       || (settings.width !== undefined && !finiteBetween(settings.width,100,500))
       || (settings.postColor !== undefined && (typeof settings.postColor !== 'string' || settings.postColor.length > 100))
       || (settings.walls !== undefined && (!settings.walls || typeof settings.walls !== 'object' || !['front','back','side'].every(face => typeof (settings.walls as Record<string,unknown>)[face] === 'boolean'))))) return false;
+  }
+  if (c.frontCanopyWalls !== undefined && typeof c.frontCanopyWalls !== 'boolean') return false;
+  if (c.frontCanopy !== undefined && !finiteBetween(c.frontCanopy, 0, 150)) return false;
+  if (c.assembly !== undefined) {
+    const assembly = c.assembly as Record<string, unknown>;
+    if (nested || !assembly || typeof assembly !== 'object' || Array.isArray(assembly)
+      || !finiteBetween(assembly.gapWidth, 200, 600) || !isGarageProjectConfig(assembly.second, true)) return false;
   }
   if (!Array.isArray(c.elements) || c.elements.length > 30) return false;
   const ids = new Set<string>();

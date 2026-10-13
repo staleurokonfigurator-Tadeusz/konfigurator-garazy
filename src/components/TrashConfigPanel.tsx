@@ -175,7 +175,7 @@ export default function TrashConfigPanel({ config, setConfig, appData, selectedW
 
       <Section title="Wymiary Główne" icon={<Maximize size={20} />}>
         <div className="space-y-6">
-          {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: 600, step: 10 }, { label: 'Długość', key: 'length' as const, min: 200, max: 800, step: 10 }, { label: 'Wysokość w świetle', key: 'height' as const, min: 200, max: 350, step: 5 }].map(dim => (
+          {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: 600, step: 1 }, { label: 'Długość', key: 'length' as const, min: 200, max: 800, step: 1 }, { label: 'Wysokość w świetle', key: 'height' as const, min: 200, max: 350, step: 1 }].map(dim => (
             <div key={dim.key}>
               <div className="flex justify-between mb-2 text-sm font-semibold text-zinc-700"><label>{dim.label}</label><span className="bg-white px-2 py-1 rounded border text-[var(--theme)] font-bold">{config[dim.key]} cm</span></div>
               <input type="range" min={dim.min} max={dim.max} step={dim.step} value={config[dim.key]} onChange={(e) => updateConfig(dim.key, Number(e.target.value))} className="w-full" style={{accentColor: 'var(--theme)'}} />

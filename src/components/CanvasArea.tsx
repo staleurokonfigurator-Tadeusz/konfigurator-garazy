@@ -3,15 +3,18 @@
 import { Canvas, useThree } from '@react-three/fiber';
 import { CameraControls, ContactShadows, Edges, Html, Line, useTexture } from '@react-three/drei';
 import { GarageConfig, WallFace } from '@/types';
+import MiddleCarport from './MiddleCarport';
+import LightweightEnvironment from './LightweightEnvironment';
+import { getAssemblyLayout } from '@/lib/garageAssembly';
 import GarageModel from './GarageModel';
 import { Suspense, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { getThreePerformanceProfile } from '@/lib/threePerformance';
-import { getCarportLayout } from '@/lib/garageExtras';
 import { getGarageCameraDistance } from '@/lib/garageMaterial';
 
 interface CanvasAreaProps {
   config: GarageConfig;
+  activeGarage?: 0 | 1;
   selectedWall: WallFace;
   activeDimId?: string | null;
   colors?: any[];
@@ -23,13 +26,13 @@ function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFa
   const controlsRef = useRef<any>(null);
   const size = useThree(state => state.size);
   const distance = getGarageCameraDistance(config, selectedWall, size.width / Math.max(size.height, 1));
-  const sceneCenterX = getCarportLayout(config).centerX / 100;
+  const layout = getAssemblyLayout(config);
+  const sceneCenterX = layout.centerX / 100;
+  const sceneWidth = layout.width / 100, sceneLength = (layout.length + layout.frontProjection) / 100, sceneHeight = layout.height / 100;
 
   useEffect(() => {
     if (!controlsRef.current) return;
-    const w = config.width * 0.01; 
-    const l = config.length * 0.01; 
-    const h = config.height * 0.01;
+    const w = sceneWidth, l = sceneLength, h = sceneHeight;
     
 
     let targetX = sceneCenterX;
@@ -43,11 +46,11 @@ function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFa
     switch (selectedWall) {
       case 'front': targetZ = l / 2; camZ = l / 2 + dist * zoomMultiplier; break;
       case 'back': targetZ = -l / 2; camZ = -l / 2 - dist * zoomMultiplier; break;
-      case 'left': targetX = -w / 2; camX = -w / 2 - dist * zoomMultiplier; break;
-      case 'right': targetX = w / 2; camX = w / 2 + dist * zoomMultiplier; break;
+      case 'left': targetX = sceneCenterX - w / 2; camX = sceneCenterX - w / 2 - dist * zoomMultiplier; break;
+      case 'right': targetX = sceneCenterX + w / 2; camX = sceneCenterX + w / 2 + dist * zoomMultiplier; break;
     }
     controlsRef.current.setLookAt(camX, h / 2, camZ, targetX, h / 2, targetZ, true);
-  }, [selectedWall, config.width, config.length, config.height, activeDimId, config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight, sceneCenterX, distance]);
+  }, [selectedWall, sceneWidth, sceneLength, sceneHeight, activeDimId, sceneCenterX, distance]);
 
   return <CameraControls ref={controlsRef} minPolarAngle={Math.PI / 8} maxPolarAngle={Math.PI / 2 - 0.05} minDistance={2} maxDistance={Math.max(25, distance * 1.5)} makeDefault />;
 }
@@ -143,8 +146,9 @@ function SceneGround({ config }: { config: GarageConfig }) {
     return texture;
   }, [drivewaySource]);
 
-  const drivewayWidth = Math.max(3.2, Math.min(6, config.width / 100));
-  const garageFront = config.length / 200;
+  const layout = getAssemblyLayout(config);
+  const drivewayWidth = config.assembly ? layout.width / 100 : Math.max(3.2, Math.min(6, config.width / 100));
+  const garageFront = layout.length / 200;
 
   useEffect(() => {
     const tileSize = 1.35;
@@ -164,7 +168,7 @@ function SceneGround({ config }: { config: GarageConfig }) {
         <planeGeometry args={[groundSize, groundSize]} />
         <meshStandardMaterial map={grass} color="#c2ccb5" roughness={0.98} metalness={0} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, -0.018, garageFront + 4]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[layout.centerX/100, -0.018, garageFront + 4]}>
         <planeGeometry args={[drivewayWidth, 8]} />
         <meshStandardMaterial map={driveway} bumpMap={drivewayBump} bumpScale={0.016} color="#ece8e1" roughness={0.94} metalness={0} />
       </mesh>
@@ -215,9 +219,11 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
   return null;
 }
 
-export default function CanvasArea({ config, selectedWall, activeDimId, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
+export default function CanvasArea({ config, activeGarage = 0, selectedWall, activeDimId, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
   const renderProfile = useMemo(() => getThreePerformanceProfile(), []);
-  const shadowExtent = Math.max(10, getCarportLayout(config).totalWidth / 100, config.length / 100) * 0.75;
+  const layout = getAssemblyLayout(config);
+  const edited = activeGarage && layout.second ? layout.second : layout.first;
+  const shadowExtent = Math.max(10, layout.width / 100, (layout.length + layout.frontProjection) / 100) * 0.75;
   const contactShadowKey = useMemo(() => JSON.stringify({
     width: config.width,
     length: config.length,
@@ -225,7 +231,9 @@ export default function CanvasArea({ config, selectedWall, activeDimId, colors =
     roof: config.roofType,
     carport: [config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight],
     elements: config.elements,
-  }), [config.width, config.length, config.height, config.roofType, config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight, config.elements]);
+    assembly: config.assembly,
+    projection: config.frontCanopy,
+  }), [config.width, config.length, config.height, config.roofType, config.hasCarport, config.carportWidth, config.carportSide, config.carportLeft, config.carportRight, config.elements, config.assembly, config.frontCanopy]);
 
   return (
     <Canvas
@@ -242,14 +250,22 @@ export default function CanvasArea({ config, selectedWall, activeDimId, colors =
       camera={{ position: [5, 3, 7], fov: 50 }}
       className="w-full h-full"
     >
+      <color attach="background" args={['#dbe4ea']} />
       <ambientLight intensity={0.12} />
       <hemisphereLight args={['#e5edf4', '#8c8373', 0.65]} />
       <directionalLight position={[shadowExtent * 0.8, shadowExtent * 1.4, shadowExtent * 0.9]} intensity={2.0} color="#fff5e6" castShadow shadow-mapSize-width={renderProfile.shadowMapSize} shadow-mapSize-height={renderProfile.shadowMapSize} shadow-bias={-0.00015} shadow-normalBias={0.015} shadow-camera-near={0.5} shadow-camera-far={shadowExtent * 5} shadow-camera-left={-shadowExtent} shadow-camera-right={shadowExtent} shadow-camera-top={shadowExtent} shadow-camera-bottom={-shadowExtent} />
       <directionalLight position={[-8, 7, -5]} intensity={0.2} color="#dbe7f2" />
 
       <Suspense fallback={null}>
-        <GarageModel config={config} colors={colors} />
-        {activeDimId && <DimensionsOverlay config={config} activeId={activeDimId} />}
+        <LightweightEnvironment intensity={0.9} />
+        <group name="garageModelGroup">
+          <group position={[layout.firstX/100,0,layout.firstZ/100]}><GarageModel config={layout.first} colors={colors} /></group>
+          {layout.second && <>
+            <group position={[layout.secondX/100,0,layout.secondZ/100]}><GarageModel config={layout.second} colors={colors} /></group>
+            <MiddleCarport config={config} colors={colors} />
+          </>}
+        </group>
+        {activeDimId && <group position={activeGarage && layout.second ? [layout.secondX/100,0,layout.secondZ/100] : [layout.firstX/100,0,layout.firstZ/100]}><DimensionsOverlay config={edited} activeId={activeDimId} /></group>}
         <SceneGround config={config} />
       </Suspense>
 

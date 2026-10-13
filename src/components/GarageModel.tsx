@@ -9,7 +9,7 @@ import { getThreePerformanceProfile } from '@/lib/threePerformance';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useTexture } from '@react-three/drei';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import LightweightEnvironment from './LightweightEnvironment';
+import { getFrontCanopy } from '@/lib/garageAssembly';
 import PirPanelJoints from './PirPanelJoints';
 import { clipProfilePolygon, applyWallUV, type ProfilePoint } from '@/lib/profileClipping';
 import { getCarportSides, getCarportSettings, getCarportLayout, type CarportSide } from '@/lib/garageExtras';
@@ -22,6 +22,7 @@ function getColorAppearance(isWood: boolean, colorId: string | undefined, colors
 
 interface GarageModelProps {
   config: GarageConfig;
+  roofOnly?: boolean;
   colors?: any[];
 }
 
@@ -514,7 +515,7 @@ function AnimatedGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHor
   );
 }
 
-export default function GarageModel({ config, colors = [] }: GarageModelProps) {
+export default function GarageModel({ config, colors = [], roofOnly = false }: GarageModelProps) {
   const w = (config.width || 300) * 0.01;
   const l = (config.length || 500) * 0.01;
   const h = (config.height || 210) * 0.01;
@@ -845,7 +846,8 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     const gutterMatProps = { color: isGutterWood ? '#ffffff' : gutterHex, map: isGutterWood && gutterTexUrl && materialTextures[gutterTexUrl] ? materialTextures[gutterTexUrl] : undefined, roughness: 0.6, metalness: 0.5 };
     
     const oX = 0.15; const oZ = 0.15; 
-    const rL = l + (oZ * 2); const rW = totalW + (oX * 2); 
+    const projection = getFrontCanopy(config) / 100;
+    const rL = l + (oZ * 2) + projection; const rW = totalW + (oX * 2); 
 
     const { hex: roofHex, isWood: isRoofWood, textureUrl: roofTexUrl } = resolveColor(config.roofColor, colors);
     const { hex: fasciaHex, isWood: isFasciaWood, textureUrl: fasciaTexUrl } = resolveColor(config.roofFlashingColor, colors);
@@ -880,7 +882,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       const eavesY = h + liftY - Math.tan(roofTheta)*oX;
 
       return (
-        <group position={[centerX, ridgeY, 0]}>
+        <group position={[centerX, ridgeY, projection/2]}>
           <group rotation={[0, 0, roofTheta]}>
             <mesh position={[-(paneLen/2 - overlap/2), 0, 0]} castShadow receiveShadow>
               <boxGeometry args={[paneLen, t, rL]} />
@@ -901,8 +903,8 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           </group>
           {showGutters && (
             <>
-              {renderGutterPipe(rL, [Math.PI/2, 0, 0], [-totalW/2 - oX, eavesY - ridgeY - 0.01, 0], [-totalW/2 - oX + 0.035, -ridgeY, -l/2 - oZ + 0.05], eavesY)}
-              {renderGutterPipe(rL, [Math.PI/2, 0, 0], [ totalW/2 + oX, eavesY - ridgeY - 0.01, 0], [ totalW/2 + oX - 0.035, -ridgeY, -l/2 - oZ + 0.05], eavesY)}
+              {renderGutterPipe(rL, [Math.PI/2, 0, 0], [-totalW/2 - oX, eavesY - ridgeY - 0.01, 0], [-totalW/2 - oX + 0.035, -ridgeY, -l/2 - oZ + 0.05 - projection/2], eavesY)}
+              {renderGutterPipe(rL, [Math.PI/2, 0, 0], [ totalW/2 + oX, eavesY - ridgeY - 0.01, 0], [ totalW/2 + oX - 0.035, -ridgeY, -l/2 - oZ + 0.05 - projection/2], eavesY)}
             </>
           )}
         </group>
@@ -913,6 +915,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       const roofTheta = Math.atan2(slopeH, l / 2);
       const overlap = 0.08;
       const paneLen = (l / 2 + oZ) / Math.cos(roofTheta) + overlap;
+      const frontPaneLen = (l / 2 + oZ + projection) / Math.cos(roofTheta) + overlap;
       const liftY = (t / 2) / Math.cos(roofTheta);
       const ridgeY = h + slopeH + liftY - roofContactOverlap;
       const eavesY = h + liftY - Math.tan(roofTheta) * oZ;
@@ -920,13 +923,13 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
       return (
         <group position={[centerX, ridgeY, 0]}>
           <group rotation={[roofTheta, 0, 0]}>
-            <mesh position={[0, 0, paneLen / 2 - overlap / 2]} castShadow receiveShadow>
-              <boxGeometry args={[rW, t, paneLen]} />
+            <mesh position={[0, 0, frontPaneLen / 2 - overlap / 2]} castShadow receiveShadow>
+              <boxGeometry args={[rW, t, frontPaneLen]} />
               {renderFasciaMat("material-0")}{renderFasciaMat("material-1")}{renderMainRoofMat("material-2")}{renderMainRoofMat("material-3")}{renderFasciaMat("material-4")}{renderFasciaMat("material-5")}
             </mesh>
-            {isPir && <PirPanelJoints width={rW} height={paneLen} position={[0, t / 2 + 0.011, paneLen / 2 - overlap / 2]} rotation={[-Math.PI / 2, 0, 0]} color={roofHex} />}
-            {renderSheet(rW, paneLen, "z", [0, t / 2 + 0.002, paneLen / 2 - overlap / 2])}
-            {isRoofTile && <RoofTileRelief width={rW} depth={paneLen} slopeAxis="z" position={[0, t / 2 + 0.002, paneLen / 2 - overlap / 2]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofReliefTexture} normalTexture={isRoofWood ? woodNormal : undefined} />}
+            {isPir && <PirPanelJoints width={rW} height={frontPaneLen} position={[0, t / 2 + 0.011, frontPaneLen / 2 - overlap / 2]} rotation={[-Math.PI / 2, 0, 0]} color={roofHex} />}
+            {renderSheet(rW, frontPaneLen, "z", [0, t / 2 + 0.002, frontPaneLen / 2 - overlap / 2])}
+            {isRoofTile && <RoofTileRelief width={rW} depth={frontPaneLen} slopeAxis="z" position={[0, t / 2 + 0.002, frontPaneLen / 2 - overlap / 2]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofReliefTexture} normalTexture={isRoofWood ? woodNormal : undefined} />}
           </group>
           <group rotation={[-roofTheta, 0, 0]}>
             <mesh position={[0, 0, -(paneLen / 2 - overlap / 2)]} castShadow receiveShadow>
@@ -939,7 +942,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           </group>
           {showGutters && (
             <>
-              {renderGutterPipe(rW, [0, 0, Math.PI / 2], [0, eavesY - ridgeY - 0.01, l / 2 + oZ], [totalW / 2 + oX - 0.05, -ridgeY, l / 2 + oZ - 0.035], eavesY)}
+              {renderGutterPipe(rW, [0, 0, Math.PI / 2], [0, eavesY - Math.tan(roofTheta)*projection - ridgeY - 0.01, l / 2 + oZ + projection], [totalW / 2 + oX - 0.05, -ridgeY, l / 2 + oZ + projection - 0.035], eavesY - Math.tan(roofTheta)*projection)}
               {renderGutterPipe(rW, [0, 0, Math.PI / 2], [0, eavesY - ridgeY - 0.01, -l / 2 - oZ], [totalW / 2 + oX - 0.05, -ridgeY, -l / 2 - oZ + 0.035], eavesY)}
             </>
           )}
@@ -951,24 +954,24 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     let paneLenX = rW, paneLenZ = rL; let liftY = 0; let eavesY = h;
 
     if (isFront) {
-      roofRotX = Math.atan2(slopeH, l); liftY = (t/2)/Math.cos(roofRotX); eavesY = h + liftY - Math.tan(roofRotX)*oZ;
-      paneLenZ = (l + oZ*2) / Math.cos(roofRotX);
-      gutterSystem = renderGutterPipe(rW, [0, 0, Math.PI/2], [0, eavesY - 0.01, l/2 + oZ], [totalW/2 + oX - 0.05, 0, l/2 + oZ - 0.035], eavesY);
+      roofRotX = Math.atan2(slopeH, l); liftY = (t/2)/Math.cos(roofRotX); eavesY = h + liftY - Math.tan(roofRotX)*(oZ + projection);
+      paneLenZ = (l + oZ*2 + projection) / Math.cos(roofRotX);
+      gutterSystem = renderGutterPipe(rW, [0, 0, Math.PI/2], [0, eavesY - 0.01, l/2 + oZ + projection], [totalW/2 + oX - 0.05, 0, l/2 + oZ + projection - 0.035], eavesY);
     } else if (isBack) {
       roofRotX = -Math.atan2(slopeH, l); liftY = (t/2)/Math.cos(Math.abs(roofRotX)); eavesY = h + liftY - Math.tan(Math.abs(roofRotX))*oZ;
-      paneLenZ = (l + oZ*2) / Math.cos(Math.abs(roofRotX));
+      paneLenZ = (l + oZ*2 + projection) / Math.cos(Math.abs(roofRotX));
       gutterSystem = renderGutterPipe(rW, [0, 0, Math.PI/2], [0, eavesY - 0.01, -l/2 - oZ], [totalW/2 + oX - 0.05, 0, -l/2 - oZ + 0.035], eavesY);
     } else if (isLeft) {
       roofRotZ = Math.atan2(slopeH, totalW); liftY = (t/2)/Math.cos(roofRotZ); eavesY = h + liftY - Math.tan(roofRotZ)*oX;
       paneLenX = (totalW + oX*2) / Math.cos(roofRotZ);
-      gutterSystem = renderGutterPipe(rL, [Math.PI/2, Math.PI, 0], [-totalW/2 - oX, eavesY - 0.01, 0], [-totalW/2 - oX + 0.035, 0, -l/2 - oZ + 0.05], eavesY);
+      gutterSystem = renderGutterPipe(rL, [Math.PI/2, Math.PI, 0], [-totalW/2 - oX, eavesY - 0.01, 0], [-totalW/2 - oX + 0.035, 0, -l/2 - oZ + 0.05 - projection/2], eavesY);
     } else if (isRight) {
       roofRotZ = -Math.atan2(slopeH, totalW); liftY = (t/2)/Math.cos(Math.abs(roofRotZ)); eavesY = h + liftY - Math.tan(Math.abs(roofRotZ))*oX;
       paneLenX = (totalW + oX*2) / Math.cos(Math.abs(roofRotZ));
-      gutterSystem = renderGutterPipe(rL, [Math.PI/2, 0, 0], [totalW/2 + oX, eavesY - 0.01, 0], [totalW/2 + oX - 0.035, 0, -l/2 - oZ + 0.05], eavesY);
+      gutterSystem = renderGutterPipe(rL, [Math.PI/2, 0, 0], [totalW/2 + oX, eavesY - 0.01, 0], [totalW/2 + oX - 0.035, 0, -l/2 - oZ + 0.05 - projection/2], eavesY);
     }
 
-    const ridgeZ = isFront ? -l/2 - oZ : (isBack ? l/2 + oZ : 0);
+    const ridgeZ = isFront ? -l/2 - oZ : (isBack ? l/2 + oZ + projection : projection/2);
     const ridgeX = isLeft ? maxX + oX : (isRight ? minX - oX : centerX);
     const ridgeY = getH(ridgeX, ridgeZ) + liftY - roofContactOverlap;
 
@@ -986,7 +989,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           {renderSheet(paneLenX, paneLenZ, isFront || isBack ? 'z' : 'x', [xShift, t/2 + 0.002, zShift])}
           {isRoofTile && <RoofTileRelief width={paneLenX} depth={paneLenZ} slopeAxis={isFront || isBack ? 'z' : 'x'} position={[xShift, t/2 + 0.002, zShift]} color={isRoofWood ? '#ffffff' : roofHex} texture={roofReliefTexture} normalTexture={isRoofWood ? woodNormal : undefined} />}
         </group>
-        {showGutters && <group position={[centerX, 0, 0]}>{gutterSystem}</group>}
+        {showGutters && <group position={[centerX, 0, isLeft || isRight ? projection/2 : 0]}>{gutterSystem}</group>}
       </group>
     );
   };
@@ -1107,12 +1110,20 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
     return <mesh position={[xPos, hTrim / 2, zPos]} castShadow><boxGeometry args={[t + 0.01, hTrim + 0.01, t + 0.01]} /><meshStandardMaterial color={isWood ? '#ffffff' : hex} map={isWood && textureUrl && materialTextures[textureUrl] ? materialTextures[textureUrl] : undefined} roughness={0.6} metalness={0.4} /></mesh>;
   };
 
+  if (roofOnly) return <group ref={materialRoot} name="carportRoofGroup">{renderRoof()}</group>;
+  const projection = getFrontCanopy(config)/100;
+  const renderCanopySide = (right: boolean) => {
+    const wallX = right ? w/2 : -w/2;
+    const points = [[-projection-t,0],[0,0],[0,getH(wallX,l/2)],[-projection-t,getH(wallX,l/2+projection)]];
+    return <group key={String(right)} position={[right ? w/2-t : -w/2,0,l/2-t]} rotation={[0,Math.PI/2,0]}>
+      <mesh castShadow receiveShadow><WallGeometry outlineKey={JSON.stringify(points)} openingsKey="[]" depth={t}/>{wallMaterialComponent}</mesh>
+      {projection > 1 && <mesh position={[-projection-t+1,getH(wallX,l/2+projection-1)/2,right ? t+0.002 : -0.002]}><boxGeometry args={[0.008,getH(wallX,l/2+projection-1)-0.01,0.003]}/><meshStandardMaterial color={wallHex} roughness={0.8}/></mesh>}
+    </group>;
+  };
   return (
     <>
-      <LightweightEnvironment intensity={0.9} />
-      <color attach="background" args={['#dbe4ea']} />
       
-      <group ref={materialRoot} name="garageModelGroup">
+      <group ref={materialRoot} name="garageUnitGroup">
         {showCornerFlashings && (
           <>
             {renderCornerTrim(-w/2 + t/2, l/2 - t/2, getH(-w/2, l/2))}
@@ -1140,6 +1151,7 @@ export default function GarageModel({ config, colors = [] }: GarageModelProps) {
           {renderElements('right', [w / 2 - t, 0, l / 2 - t], Math.PI / 2, true, false)}
 
           {renderRoof()}
+          {projection > 0 && config.frontCanopyWalls !== false && [renderCanopySide(false),renderCanopySide(true)]}
         </group>
 
         {getCarportSides(config).map(side => <group key={side}>{renderCarport(side)}</group>)}

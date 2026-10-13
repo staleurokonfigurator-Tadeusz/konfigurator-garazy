@@ -2,14 +2,16 @@
 
 import { GarageConfig, RoofType, WallFace, GarageElement, GateType, SheetProfile } from '@/types';
 import { Home, Maximize, PaintBucket, Plus, Trash2, BoxSelect, Layers, ChevronDown, Edit2, Settings, Smartphone, Eye, FileText } from 'lucide-react';
-import { isAddonAvailable, cleanUnavailableOptions, updateGarageElement } from '@/lib/garageOptions';
+import { isAddonAvailable, isReinforcedFrameAddon, cleanUnavailableOptions, updateGarageElement } from '@/lib/garageOptions';
 import { findValidPosition } from '@/lib/collision';
 import { v4 as uuidv4 } from 'uuid';
 import React, { useMemo, useState, Dispatch, SetStateAction } from 'react';
 import dynamic from 'next/dynamic';
 import { getTrustedParentOrigin, postCheckoutToWordPress, WORDPRESS_MESSAGE_VERSION } from '@/lib/wordpressBridge';
 import EditableDimension from './EditableDimension';
-import { getCarportSides, getCarportSettings, withCarportSettings, getCarportLayout, getAnchoringPrice, isAnchoringAddon } from '@/lib/garageExtras';
+import { getCarportSides, getCarportSettings, withCarportSettings, getAnchoringPrice, isAnchoringAddon } from '@/lib/garageExtras';
+import { calculateGaragePrice } from '@/lib/garagePricing';
+import { getFrontCanopy } from '@/lib/garageAssembly';
 import RoofTypeIcon from './RoofTypeIcon';
 import { getPirPricePerM2, isPirGarage, MAX_GARAGE_WIDTH_CM, MAX_GARAGE_LENGTH_CM } from '@/lib/garageMaterial';
 
@@ -17,6 +19,10 @@ const OfferDialog = dynamic(() => import('@/components/OfferDialog'), { ssr: fal
 
 interface ConfigPanelProps {
   config: GarageConfig;
+  assemblyConfig?: GarageConfig;
+  assemblyControls?: React.ReactNode;
+  onDisableCarports?: () => void;
+  outerCarportSide?: 'left' | 'right';
   setConfig: Dispatch<SetStateAction<GarageConfig>>;
   selectedWall: WallFace;
   setSelectedWall: Dispatch<SetStateAction<WallFace>>;
@@ -51,7 +57,7 @@ function Section({ title, icon, children, defaultOpen = true }: { title: string;
   );
 }
 
-export default function ConfigPanel({ config, setConfig, selectedWall, setSelectedWall, appData, isGeneratingAR, setIsGeneratingAR, isReadOnly = false, isOfferMode = false, storeUrl, requestARExport, activeDimId, setActiveDimId }: ConfigPanelProps) {
+export default function ConfigPanel({ config, assemblyConfig, assemblyControls, onDisableCarports, outerCarportSide, setConfig, selectedWall, setSelectedWall, appData, isGeneratingAR, setIsGeneratingAR, isReadOnly = false, isOfferMode = false, storeUrl, requestARExport, activeDimId, setActiveDimId }: ConfigPanelProps) {
   const [activeColorEdit, setActiveColorEdit] = useState<string | null>(null);
   const [elementError, setElementError] = useState('');
   const [region, setRegion] = useState('');
@@ -88,130 +94,9 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
     return isNaN(num) ? 0 : num;
   };
 
-  const calculatedPrice = useMemo(() => {
-    let totalBase = 0; 
-    let percentBaseMultiplier = 1;
-    let totalFinal = 0;
-    let percentFinalMultiplier = 1;
-
-    const isDualSlopeRoof = config.roofType === 'dual-slope' || config.roofType === 'dual-slope-front-back';
-    let baseM2Price = isPirGarage(config) ? getPirPricePerM2(pricing.sqm_pir_v) : (isDualSlopeRoof ? safeNum(pricing.sqm_dual_v) : safeNum(pricing.sqm_single_v));
-    
-    const baseH = safeNum(appData?.baseConfig?.h) || 210;
-    const extraHeight = Math.max(0, config.height - baseH);
-    const heightIncrements = Math.floor(extraHeight / 10);
-    baseM2Price = baseM2Price * (1 + (heightIncrements * 0.10)); 
-    
-    const area = (config.width / 100) * (config.length / 100);
-    totalBase += area * baseM2Price;
-
-    if (config.hasCarport) {
-      const carportWidth = getCarportLayout(config).extraWidth;
-      const carportArea = (carportWidth / 100) * (config.length / 100);
-      totalBase += carportArea * safeNum(pricing.integrated_carport_m2_v);
-    }
-
-    if (config.gutters && !isPirGarage(config)) {
-      let gutterMeters = 0;
-      if (config.roofType === 'dual-slope') gutterMeters = (config.length / 100) * 2;
-      else if (config.roofType === 'dual-slope-front-back') gutterMeters = (config.width / 100) * 2;
-      else if (config.roofType === 'slope-back' || config.roofType === 'slope-front') gutterMeters = (config.width / 100); 
-      else gutterMeters = (config.length / 100);
-      totalBase += gutterMeters * safeNum(pricing.gutter_v);
-    }
-
-    let includedPirGateAvailable = isPirGarage(config);
-    config.elements.forEach(el => {
-      if (el.type === 'skylight') {
-         totalBase += (el.width / 100) * safeNum(pricing.skylight_v);
-      }
-      if (el.type === 'window' || el.type === 'pvc-window') {
-        if (el.width === 80 && el.height === 60) totalBase += safeNum(pricing.win_80x60);
-        else if (el.width === 40 && el.height === 180) totalBase += safeNum(pricing.win_40x180);
-        else if (el.width === 60 && el.height === 180) totalBase += safeNum(pricing.win_60x180);
-      }
-      if (el.type === 'gate') {
-        const includedGate = includedPirGateAvailable;
-        includedPirGateAvailable = false;
-        if (!includedGate) {
-          if (el.gateType === 'up-and-over') {
-            if (el.width === 200) totalBase += safeNum(pricing.gate_up_2x2);
-            else if (el.width === 300) totalBase += safeNum(pricing.gate_up_3x2);
-            else if (el.width === 400) totalBase += safeNum(pricing.gate_up_4x2);
-            else if (el.width === 500) totalBase += safeNum(pricing.gate_up_5x2);
-          } else if (el.gateType === 'sectional') {
-            if (el.width === 300) totalBase += safeNum(pricing.gate_sec_3x2);
-            else if (el.width === 400) totalBase += safeNum(pricing.gate_sec_4x2);
-            else if (el.width === 500) totalBase += safeNum(pricing.gate_sec_5x2);
-          } else if (el.gateType === 'swing') {
-            if (el.width === 200) totalBase += safeNum(pricing.gate_double_3x2) - 100; // orientacyjna cena bazowa
-            else if (el.width === 300) totalBase += safeNum(pricing.gate_double_3x2);
-            else if (el.width === 400) totalBase += safeNum(pricing.gate_double_4x2);
-          }
-        }
-        if ((el as any).hasDoor) {
-          totalBase += safeNum(pricing.door_in_gate_v);
-        }
-      }
-      if (el.type === 'door') {
-        if (pricing.door_t === 'fixed') totalBase += safeNum(pricing.door_v);
-        else if (pricing.door_t === 'pct_base') percentBaseMultiplier += (safeNum(pricing.door_v)/100);
-        else percentFinalMultiplier += (safeNum(pricing.door_v)/100);
-      }
-    });
-
-    if (!isPirGarage(config) && config.extraOptions?.includes('roofTile')) {
-       totalBase += area * safeNum(pricing.roof_tile_v);
-    }
-
-    if (config.extraOptions?.includes('cornerFlashings')) {
-        if (pricing.flash_corner_t === 'fixed') totalBase += safeNum(pricing.flash_corner_v);
-        else if (pricing.flash_corner_t === 'pct_base') percentBaseMultiplier += (safeNum(pricing.flash_corner_v)/100);
-        else percentFinalMultiplier += (safeNum(pricing.flash_corner_v)/100);
-    }
-    if (config.extraOptions?.includes('roofFlashings')) {
-        if (pricing.flash_roof_t === 'fixed') totalBase += safeNum(pricing.flash_roof_v);
-        else if (pricing.flash_roof_t === 'pct_base') percentBaseMultiplier += (safeNum(pricing.flash_roof_v)/100);
-        else percentFinalMultiplier += (safeNum(pricing.flash_roof_v)/100);
-    }
-
-    const activeColors = [
-      config.wallColor, config.roofColor, config.gateColor, 
-      config.doorColor, config.windowColor, 
-      config.cornerFlashingColor, config.roofFlashingColor, config.gutterColor,
-      ...getCarportSides(config).map(side => getCarportSettings(config, side).postColor)
-    ];
-    const uniqueColors = Array.from(new Set(activeColors));
-    let hasWoodColor = false;
-
-    uniqueColors.forEach(cId => {
-       const c = dbColors.find((col: any) => col.id === cId);
-       if (c && safeNum(c.price) > 0) totalBase += safeNum(c.price);
-       if (c && c.type && c.type.toLowerCase().includes('drewn')) hasWoodColor = true;
-    });
-
-    if (hasWoodColor) {
-        if (pricing.wood_t === 'fixed') totalBase += safeNum(pricing.wood_v);
-        else if (pricing.wood_t === 'pct_base') percentBaseMultiplier += (safeNum(pricing.wood_v)/100);
-        else percentFinalMultiplier += (safeNum(pricing.wood_v)/100);
-    }
-
-    let customAddonTotal = 0;
-    (config.extraOptions || []).forEach(addonId => {
-      const addon = customAddons.find((a: any) => a.id === addonId);
-      if (addon && isAddonAvailable(config, addon)) {
-        if (isAnchoringAddon(addon)) { customAddonTotal += getAnchoringPrice(config); return; }
-        if (addon.type === 'fixed') customAddonTotal += safeNum(addon.price);
-        else if (addon.type === 'pct' || addon.type === 'pct_total') percentFinalMultiplier += (safeNum(addon.price) / 100);
-        else if (addon.type === 'pct_base') percentBaseMultiplier += (safeNum(addon.price) / 100);
-        else if (addon.type === 'm2') customAddonTotal += area * safeNum(addon.price);
-        else if (addon.type === 'mb') customAddonTotal += ((config.width / 100) + (config.length / 100)) * 2 * safeNum(addon.price);
-      }
-    });
-
-    totalBase = totalBase * percentBaseMultiplier;
-    return Math.round((totalBase + totalFinal) * percentFinalMultiplier + customAddonTotal);
-  }, [config, pricing, customAddons, appData, dbColors]);
+  const orderConfig = assemblyConfig || config;
+  const assemblyDisabled = Boolean(orderConfig.assembly) && appData?.features?.twoGarages === false;
+  const calculatedPrice = useMemo(() => calculateGaragePrice(orderConfig, appData || {}), [orderConfig, appData]);
 
   const updateConfig = <K extends keyof GarageConfig>(key: K, value: GarageConfig[K]) => {
     if (isReadOnly) return;
@@ -312,7 +197,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
   const frontGates = gates.filter(gate => gate.wall === 'front');
 
   const handleCheckout = () => {
-    if (isReadOnly) return;
+    if (isReadOnly || assemblyDisabled) return;
     setIsProcessing(true);
 
     try {
@@ -328,7 +213,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
       postCheckoutToWordPress({
         action: 'konfigurator_checkout',
         version: WORDPRESS_MESSAGE_VERSION,
-        config,
+        config: orderConfig,
         estimatedPrice: calculatedPrice,
         // Pole pozostaje tymczasowo dla zgodności ze starszą wtyczką. Nowa
         // wtyczka MUSI je ignorować i ponownie policzyć cenę po stronie serwera.
@@ -378,7 +263,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
       <Section title="Materiał ścian i dachu" icon={<Layers size={20} />}>
         <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
           {([{ id: 'sheet', label: 'Standardowa blacha', detail: 'Cena według cennika' },
-            { id: 'pir', label: 'Płyta warstwowa PIR', detail: `${pirPricePerM2} zł / m² garażu · orynnowanie i 1 brama w cenie` }] as const).map(material => (
+            { id: 'pir', label: 'Płyta warstwowa PIR', detail: `${pirPricePerM2} zł / m² garażu · rynny, 1 brama i profil 60×40 w cenie` }] as const).map(material => (
             <button key={material.id} disabled={isReadOnly} aria-pressed={(isPir ? 'pir' : 'sheet') === material.id}
               onClick={() => updateConfig('buildingMaterial', material.id)}
               className={`rounded-xl border-2 p-3 text-left ${(isPir ? 'pir' : 'sheet') === material.id ? 'border-[var(--theme)] bg-zinc-50' : 'border-zinc-200 bg-white'} disabled:cursor-not-allowed`}>
@@ -387,7 +272,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
             </button>
           ))}
         </div>
-        {isPir && <p className="mt-3 text-xs text-zinc-600">Cena PIR za powierzchnię szerokość × długość obejmuje ściany, dach, orynnowanie i jedną bramę. Kolejne bramy, dodatki i dopłaty za wysokość według cennika.</p>}
+        {isPir && <p className="mt-3 text-xs text-zinc-600">Cena PIR za powierzchnię szerokość × długość obejmuje ściany, dach, orynnowanie, jedną bramę i profil wzmocniony 60×40. Kolejne bramy, dodatki i dopłaty za wysokość według cennika.</p>}
       </Section>
       <Section title="Wybierz Typ Garażu" icon={<Home size={20} />}>
         <div className="grid grid-cols-2 gap-3">
@@ -422,7 +307,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
 
       <Section title="Wymiary Główne" icon={<Maximize size={20} />}>
         <div className="space-y-6">
-        {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: MAX_GARAGE_WIDTH_CM, step: 10 }, { label: 'Długość', key: 'length' as const, min: 300, max: MAX_GARAGE_LENGTH_CM, step: 10 }, { label: 'Wysokość', key: 'height' as const, min: 200, max: 350, step: 10 }].map(dim => (
+        {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: MAX_GARAGE_WIDTH_CM, step: 1 }, { label: 'Długość', key: 'length' as const, min: 300, max: MAX_GARAGE_LENGTH_CM, step: 1 }, { label: 'Wysokość', key: 'height' as const, min: 200, max: 350, step: 1 }].map(dim => (
             <div key={dim.key}>
               <div className="flex justify-between mb-2 text-sm font-semibold text-zinc-700"><label>{dim.label}</label><EditableDimension label={dim.label} value={config[dim.key]} min={dim.min} max={dim.max} step={dim.step} readOnly={isReadOnly} onChange={value => updateConfig(dim.key, value)} /></div>
               {!isReadOnly && <input type="range" min={dim.min} max={dim.max} step={dim.step} value={config[dim.key]} onChange={(e) => updateConfig(dim.key, Number(e.target.value))} className="w-full" style={{accentColor: 'var(--theme)'}} />}
@@ -431,30 +316,49 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         </div>
       </Section>
 
+      {isPir && <Section title="Wypust przed garażem" icon={<Home size={20} />}>
+        <p className="mb-4 text-sm leading-relaxed text-zinc-600">Wysuń dach nad wjazdem. Ściana frontowa i brama pozostają na swoim miejscu. Wypust wraz ze ścianami bocznymi jest w cenie PIR.</p>
+        <label className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm font-bold text-zinc-900">Dodaj wypust PIR
+          <input type="checkbox" disabled={isReadOnly} checked={getFrontCanopy(config) > 0} onChange={event => setConfig(previous => ({...previous, frontCanopy:event.target.checked ? 50 : 0}))} className="h-5 w-5" />
+        </label>
+        {getFrontCanopy(config) > 0 && <div className="mt-4 space-y-3 text-zinc-900">
+          <div className="flex items-center justify-between gap-2 text-sm font-semibold"><span>Wysunięcie dachu</span><EditableDimension label="Wypust dachu" value={getFrontCanopy(config)} min={1} max={150} readOnly={isReadOnly} onChange={value => setConfig(previous => ({...previous,frontCanopy:value}))} /></div>
+          {!isReadOnly && <input aria-label="Wysunięcie dachu" type="range" min={1} max={150} step={1} value={getFrontCanopy(config)} onChange={event => setConfig(previous => ({...previous,frontCanopy:Number(event.target.value)}))} className="w-full" />}
+          <label className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm font-bold">Ściany boczne wypustu
+            <input type="checkbox" disabled={isReadOnly} checked={config.frontCanopyWalls !== false} onChange={event=>updateConfig('frontCanopyWalls',event.target.checked)} className="h-5 w-5" />
+          </label>
+        </div>}
+      </Section>}
       <Section title="Zintegrowana Wiata" icon={<Home size={20} />}>
         <div className="space-y-4">
+          {outerCarportSide && <p className="text-xs text-zinc-600">Wiata boczna dostępna po zewnętrznej stronie układu. Pomiędzy garażami ustawiasz wspólną wiatę w sekcji Układ zabudowy.</p>}
           <label className={`flex items-center justify-between p-3 rounded-lg border border-zinc-200 hover:bg-zinc-50 transition-colors bg-white shadow-sm ${isReadOnly ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}>
             <span className="text-sm font-semibold text-zinc-700">Dodaj wiatę do garażu</span>
             <input
               type="checkbox"
               disabled={isReadOnly}
-              checked={config.hasCarport || false}
+              checked={Boolean(config.hasCarport || orderConfig.assembly)}
               onChange={(event) => {
                 const enabled = event.target.checked;
+                if (!enabled && onDisableCarports) {onDisableCarports();return;}
                 setConfig(previous => ({
                   ...previous,
                   hasCarport: enabled,
                   carportWidth: enabled ? (previous.carportWidth || 300) : previous.carportWidth,
-                  carportSide: enabled ? (previous.carportSide || 'right') : previous.carportSide,
+                  carportSide: enabled ? (outerCarportSide || previous.carportSide || 'right') : previous.carportSide,
                 }));
               }}
               className="w-5 h-5 rounded text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50"
             />
           </label>
 
+          {assemblyControls}
+          {orderConfig.assembly && <label className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm font-bold text-zinc-700">Dodatkowa wiata po zewnętrznej stronie
+            <input type="checkbox" disabled={isReadOnly} checked={Boolean(config.hasCarport)} onChange={event=>setConfig(previous=>({...previous,hasCarport:event.target.checked,carportSide:outerCarportSide || 'right'}))} className="h-5 w-5" />
+          </label>}
           {config.hasCarport && <>
             <div className="grid grid-cols-3 gap-2">
-              {([{id:'left',label:'Lewa'},{id:'right',label:'Prawa'},{id:'both',label:'Obie strony'}] as const).map(side =>
+              {([{id:'left',label:'Lewa'},{id:'right',label:'Prawa'},{id:'both',label:'Obie strony'}] as const).filter(side => !outerCarportSide || side.id === outerCarportSide).map(side =>
                 <button key={side.id} type="button" disabled={isReadOnly} aria-pressed={(config.carportSide || 'right') === side.id}
                   onClick={() => updateConfig('carportSide',side.id)}
                   className={'min-h-11 rounded-lg border px-2 py-2 text-sm font-bold ' + ((config.carportSide || 'right') === side.id ? 'bg-zinc-800 text-white border-zinc-800' : 'bg-white text-zinc-700 border-zinc-300')}>{side.label}</button>)}
@@ -470,7 +374,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                     <label>Szerokość</label><EditableDimension label={label + ' — szerokość'} value={settings.width} min={100} max={500} readOnly={isReadOnly}
                       onChange={width => setConfig(prev => withCarportSettings(prev,side,{width}))} />
                   </div>
-                  {!isReadOnly && <input type="range" aria-label={label + ' — szerokość'} min={100} max={500} step={10} value={settings.width}
+                  {!isReadOnly && <input type="range" aria-label={label + ' — szerokość'} min={100} max={500} step={1} value={settings.width}
                     onChange={event => setConfig(prev => withCarportSettings(prev,side,{width:Number(event.target.value)}))} className="w-full" style={{accentColor:'var(--theme)'}} />}
                 </div>
                 <button type="button" disabled={isReadOnly} aria-label={'Zmień kolor słupów: ' + label} onClick={() => setActiveColorEdit(activeColorEdit === 'carport-' + side ? null : 'carport-' + side)}
@@ -624,7 +528,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                 </div>
                 {!isReadOnly && (() => {
                   const gateWallWidth = gate.wall === 'front' || gate.wall === 'back' ? config.width : config.length;
-                  return <input type="range" min={-(gateWallWidth / 2) + gate.width/2} max={(gateWallWidth / 2) - gate.width/2} step={5} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />;
+                  return <input type="range" min={-(gateWallWidth / 2) + gate.width/2} max={(gateWallWidth / 2) - gate.width/2} step={1} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />;
                 })()}
               </div>
 
@@ -755,14 +659,14 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                             <label className="text-[10px] text-zinc-500 font-bold uppercase truncate pr-1">Szer. (cm)</label>
                             <input type="number" disabled={isReadOnly} value={el.width} onChange={(e) => updateElement(el.id, { width: Number(e.target.value) })} className="w-16 border border-zinc-300 p-1 rounded text-xs bg-zinc-50 focus:bg-white focus:border-[var(--theme)] outline-none text-right disabled:opacity-80 disabled:cursor-not-allowed" />
                           </div>
-                          {!isReadOnly && <input type="range" min={20} max={wallW} step={5} value={el.width} onChange={(e) => updateElement(el.id, { width: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />}
+                          {!isReadOnly && <input type="range" min={20} max={wallW} step={1} value={el.width} onChange={(e) => updateElement(el.id, { width: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />}
                         </div>
                         <div>
                           <div className="flex justify-between items-center mb-1">
                             <label className="text-[10px] text-zinc-500 font-bold uppercase truncate pr-1">Wys. (cm)</label>
                             <input type="number" disabled={isReadOnly} value={el.height} onChange={(e) => updateElement(el.id, { height: Number(e.target.value) })} className="w-16 border border-zinc-300 p-1 rounded text-xs bg-zinc-50 focus:bg-white focus:border-[var(--theme)] outline-none text-right disabled:opacity-80 disabled:cursor-not-allowed" />
                           </div>
-                          {!isReadOnly && <input type="range" min={20} max={config.height} step={5} value={el.height} onChange={(e) => updateElement(el.id, { height: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />}
+                          {!isReadOnly && <input type="range" min={20} max={config.height} step={1} value={el.height} onChange={(e) => updateElement(el.id, { height: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />}
                         </div>
                       </div>
                     )}
@@ -773,14 +677,14 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
                           <label className="text-[10px] text-zinc-500 font-bold uppercase truncate pr-1">Przesunięcie w poziomie</label>
                           <input type="number" disabled={isReadOnly} value={el.x} onChange={(e) => updateElement(el.id, { x: Number(e.target.value) })} className="w-16 border border-zinc-300 p-1 rounded text-xs bg-zinc-50 focus:bg-white focus:border-[var(--theme)] outline-none text-right disabled:opacity-80 disabled:cursor-not-allowed" />
                         </div>
-                        {!isReadOnly && <input type="range" min={-maxX} max={maxX} step={5} value={el.x} onChange={(e) => updateElement(el.id, { x: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />}
+                        {!isReadOnly && <input type="range" min={-maxX} max={maxX} step={1} value={el.x} onChange={(e) => updateElement(el.id, { x: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />}
                       </div>
                       <div>
                         <div className="flex justify-between items-center mb-1">
                           <label className="text-[10px] text-zinc-500 font-bold uppercase truncate pr-1">Wys. od podłoża (cm)</label>
                           <input type="number" disabled={isReadOnly} value={el.y} onChange={(e) => updateElement(el.id, { y: Number(e.target.value) })} className="w-16 border border-zinc-300 p-1 rounded text-xs bg-zinc-50 focus:bg-white focus:border-[var(--theme)] outline-none text-right disabled:opacity-80 disabled:cursor-not-allowed" />
                         </div>
-                        {!isReadOnly && <input type="range" min={0} max={maxY} step={5} value={el.y} onChange={(e) => updateElement(el.id, { y: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />}
+                        {!isReadOnly && <input type="range" min={0} max={maxY} step={1} value={el.y} onChange={(e) => updateElement(el.id, { y: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />}
                       </div>
                     </div>
 
@@ -844,17 +748,19 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
           </label>
 
           {customAddons.filter((opt: {id: string; label?: string}) => isAddonAvailable(config, opt)).map((opt: any) => {
-            const isActive = (config.extraOptions || []).includes(opt.id);
+            const included = isPir && isReinforcedFrameAddon(opt);
+            const isActive = included || (config.extraOptions || []).includes(opt.id);
             let priceLabel = `+${safeNum(opt.price)} zł`;
             if (isAnchoringAddon(opt)) priceLabel = `+${getAnchoringPrice(config)} zł`;
             else if (opt.type === 'pct' || opt.type === 'pct_total' || opt.type === 'pct_base') priceLabel = `+${safeNum(opt.price)}%`;
             else if (opt.type === 'm2') priceLabel = `+${safeNum(opt.price)} zł / m²`;
             else if (opt.type === 'mb') priceLabel = `+${safeNum(opt.price)} zł / mb`;
 
+            if (included) priceLabel = 'W cenie PIR';
             return (
               <label key={opt.id} className={`flex items-center justify-between p-3 rounded-lg border border-zinc-200 hover:bg-zinc-50 transition-colors bg-white shadow-sm ${isReadOnly ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}>
                 <div className="flex items-center gap-3">
-                  <input type="checkbox" disabled={isReadOnly} checked={isActive} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), opt.id] : (config.extraOptions || []).filter(x => x !== opt.id); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
+                  <input type="checkbox" disabled={isReadOnly || included} checked={isActive} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), opt.id] : (config.extraOptions || []).filter(x => x !== opt.id); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
                   <span className="text-sm font-semibold text-zinc-700">{opt.label}</span>
                 </div>
                 <span className="text-xs font-bold text-zinc-500 bg-zinc-100 px-2 py-1 rounded">{priceLabel}</span>
@@ -993,6 +899,7 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         {isOfferMode && (
           <button
             onClick={() => setIsOfferOpen(true)}
+            disabled={assemblyDisabled}
             className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-orange-600 px-6 py-4 text-lg font-black uppercase text-white shadow-md transition-all hover:bg-orange-700"
           >
             <FileText size={20} /> Przygotuj ofertę
@@ -1002,17 +909,17 @@ export default function ConfigPanel({ config, setConfig, selectedWall, setSelect
         {!isReadOnly && !isOfferMode && (
           <button 
             onClick={handleCheckout} 
-            disabled={isProcessing}
+            disabled={isProcessing || assemblyDisabled}
             className="w-full font-bold py-4 px-6 rounded-xl text-lg uppercase transition-all shadow-md bg-[var(--theme)] hover:opacity-90 text-white cursor-pointer disabled:opacity-50 flex justify-center items-center gap-2"
           >
-            {isProcessing ? 'Przekierowywanie do kasy...' : 'Kupuję i płacę'}
+            {assemblyDisabled ? 'Wybierz układ z jednym garażem' : isProcessing ? 'Przekierowywanie do kasy...' : 'Kupuję i płacę'}
           </button>
         )}
       </div>
 
       {isOfferOpen && (
         <OfferDialog
-          config={config}
+          config={orderConfig}
           estimatedPrice={calculatedPrice}
           colors={dbColors}
           addons={customAddons}

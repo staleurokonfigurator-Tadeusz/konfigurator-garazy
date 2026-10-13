@@ -30,7 +30,7 @@ export function getAnchoringPrice(config: Pick<GarageConfig, 'width' | 'length'>
   const area = config.width * config.length / 10000;
   return area <= 36 ? 250 : area <= 50 ? 350 : 450;
 }
-export function normalizeDimension(text: string, min: number, max: number, step = 10) {
+export function normalizeDimension(text: string, min: number, max: number, step = 1) {
   if (!text.trim()) return null;
   const value = Number(text.replace(',', '.'));
   if (!Number.isFinite(value)) return null;

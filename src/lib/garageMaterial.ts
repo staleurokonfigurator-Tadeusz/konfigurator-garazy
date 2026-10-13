@@ -1,4 +1,5 @@
 import { getCarportLayout } from './garageExtras';
+import { getAssemblyLayout } from './garageAssembly';
 import type { GarageConfig, WallFace } from '@/types';
 
 export const DEFAULT_PIR_PRICE_PER_M2 = 1300;
@@ -14,8 +15,14 @@ export function getPirPricePerM2(value: unknown): number {
 }
 
 export function getGarageCameraDistance(config: GarageConfig, wall: WallFace, aspect: number): number {
-  const width = getCarportLayout(config).totalWidth / 100;
-  const length = config.length / 100;
+  const layout = getAssemblyLayout(config);
+  const width = layout.width / 100;
+  const length = (layout.length + layout.frontProjection) / 100;
+  if (config.assembly) {
+    const halfFovTangent = Math.tan(50 * Math.PI / 360);
+    const span = wall === 'front' || wall === 'back' ? width : length;
+    return Math.max((layout.height/100+1)*1.2/(2*halfFovTangent), (span+1)*1.15/(2*halfFovTangent*Math.max(aspect,0.1)), wall === 'front' || wall === 'back' ? length/2+3 : width/2+3);
+  }
   const previousDistance = Math.max(width, length) + 4;
   // A wide phone preview otherwise leaves two carports too small to inspect.
   if (config.hasCarport && config.carportSide === 'both' && aspect > 1.3) {
