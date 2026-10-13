@@ -83,7 +83,7 @@ visitRoof(ast);
 const heightCode=model.slice(model.indexOf('  const rt = String(config.roofType'),model.indexOf('  const createGarageFrontShape'));
 const roofCode=ts.transpileModule('const roofRender='+renderRoofArrow+'; return roofRender();',{fileName:'roof.tsx',compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.ReactJSX}}).outputText;
 const roofRender=new Function('config','THREE','require',
-  "const exports={};const w=config.width/100,l=config.length/100,h=config.height/100,t=0.1,slopeH=0.4,roofContactOverlap=0.005,minX=-w/2,maxX=w/2,totalW=w,centerX=0;const colors=[],materialTextures={},woodColor=undefined,woodNormal=undefined,roofTileTexture=undefined,isPir=true,isRoofTile=false,showRoofFlashings=false,showGutters=true;const RoofSheetRelief='sheet',PirPanelJoints='joints',RoofTileRelief='tiles';const resolveColor=()=>({hex:'#777777',isWood:false,textureUrl:''}),getColorAppearance=()=>({roughness:0.7}),getFrontCanopy=c=>Math.min(150,Math.max(0,c.frontCanopy||0));"+compile(heightCode)+roofCode);
+  "const exports={};const sharedRoof=undefined,worldX=0;const w=config.width/100,l=config.length/100,h=config.height/100,t=0.1,slopeH=0.4,roofContactOverlap=0.005,minX=-w/2,maxX=w/2,totalW=w,centerX=0;const colors=[],materialTextures={},woodColor=undefined,woodNormal=undefined,roofTileTexture=undefined,isPir=true,isRoofTile=false,showRoofFlashings=false,showGutters=true;const RoofSheetRelief='sheet',PirPanelJoints='joints',RoofTileRelief='tiles';const resolveColor=()=>({hex:'#777777',isWood:false,textureUrl:''}),getColorAppearance=()=>({roughness:0.7}),getFrontCanopy=c=>Math.min(150,Math.max(0,c.frontCanopy||0));"+compile(heightCode)+roofCode);
 function roofBounds(tree) {
   const bounds=new THREE.Box3();
   function walk(node,matrix) {
@@ -109,4 +109,27 @@ test('PIR roof projection moves only the front edge for all six roof types and k
     assert.ok(Math.abs(after.max.z-before.max.z-frontCanopy/100)<0.00001,roofType+' front projection wrong');
     assert.ok(Math.abs(after.min.x-before.min.x)<0.00001);assert.ok(Math.abs(after.max.x-before.max.x)<0.00001);
   }
+});
+
+
+test('garage wall outlines meet the shared roof at every top edge, including a ridge inside an asymmetric garage',()=>{
+ const source=fs.readFileSync(path.join(root,'src/lib/garageAssembly.ts'),'utf8');
+ const profileAst=ts.createSourceFile('assembly.ts',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+ const helper=profileAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='sharedRoofHeightAt').getText(profileAst);
+ const sample=new Function('const exports={};'+compile(helper)+';return sharedRoofHeightAt;')();
+ const shapes=model.slice(model.indexOf('  const createGarageFrontShape'),model.indexOf('  const wallExtrude'));
+ const render=new Function('config','sharedRoof','worldX','THREE','sharedRoofHeightAt',
+   'const exports={};const w=config.width/100,l=config.length/100,h=config.height/100,slopeH=0.4,minX=-w/2,maxX=w/2,totalW=w,centerX=0,gableCenterX=((sharedRoof.minX+sharedRoof.maxX)/2-worldX)/100;'+compile(heightCode+shapes)+';return [createGarageFrontShape(),createGarageBackShape(),createGarageSideShape(true),createGarageSideShape(false)];');
+ for(const roofType of ['dual-slope','slope-left','slope-right']) for(const [width,worldX] of [[600,-450],[600,450],[1100,-200],[300,600]]) {
+   const profile={minX:-750,maxX:750,baseHeight:219,roofType};
+   const outlines=render({width,length:601,height:219,roofType},profile,worldX,THREE,sample);
+   outlines.forEach((shape,index)=>{
+     const points=shape.getPoints().filter(p=>p.y>0);
+     for(let i=0;i<points.length-1;i++) for(let step=0;step<=10;step++) {
+       const alpha=step/10,x=points[i].x*(1-alpha)+points[i+1].x*alpha,y=points[i].y*(1-alpha)+points[i+1].y*alpha;
+       const world=index===0?worldX+x*100:index===1?worldX-x*100:worldX+(index===2?width/2:-width/2);
+       assert.ok(Math.abs(y-sample(profile,world)/100)<0.000001,roofType+' wall leaves the common roof');
+     }
+   });
+ }
 });

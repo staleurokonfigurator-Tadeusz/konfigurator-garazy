@@ -11,7 +11,7 @@ import { getTrustedParentOrigin, postCheckoutToWordPress, WORDPRESS_MESSAGE_VERS
 import EditableDimension from './EditableDimension';
 import { getCarportSides, getCarportSettings, withCarportSettings, getAnchoringPrice, isAnchoringAddon } from '@/lib/garageExtras';
 import { calculateGaragePrice } from '@/lib/garagePricing';
-import { getFrontCanopy } from '@/lib/garageAssembly';
+import { getFrontCanopy, hasSharedAssemblyRoof } from '@/lib/garageAssembly';
 import RoofTypeIcon from './RoofTypeIcon';
 import { getPirPricePerM2, isPirGarage, MAX_GARAGE_WIDTH_CM, MAX_GARAGE_LENGTH_CM } from '@/lib/garageMaterial';
 
@@ -95,6 +95,8 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
   };
 
   const orderConfig = assemblyConfig || config;
+  const sharedRoof = hasSharedAssemblyRoof(orderConfig);
+  const secondaryRoof = sharedRoof && outerCarportSide === 'right';
   const assemblyDisabled = Boolean(orderConfig.assembly) && appData?.features?.twoGarages === false;
   const calculatedPrice = useMemo(() => calculateGaragePrice(orderConfig, appData || {}), [orderConfig, appData]);
 
@@ -260,6 +262,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
 
   return (
     <div className="pb-12">
+      {sharedRoof && <p className="mb-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm leading-relaxed text-zinc-700">W tym układzie dach jest jeden. Wysokość okapu zmieniasz wspólnie dla obu garaży. Materiał, kolor i wypust wspólnego dachu ustawiasz przy garażu 1.</p>}
       <Section title="Materiał ścian i dachu" icon={<Layers size={20} />}>
         <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
           {([{ id: 'sheet', label: 'Standardowa blacha', detail: 'Cena według cennika' },
@@ -316,7 +319,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
         </div>
       </Section>
 
-      {isPir && <Section title="Wypust przed garażem" icon={<Home size={20} />}>
+      {isPir && !secondaryRoof && <Section title="Wypust przed garażem" icon={<Home size={20} />}>
         <p className="mb-4 text-sm leading-relaxed text-zinc-600">Wysuń dach nad wjazdem. Ściana frontowa i brama pozostają na swoim miejscu. Wypust wraz ze ścianami bocznymi jest w cenie PIR.</p>
         <label className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm font-bold text-zinc-900">Dodaj wypust PIR
           <input type="checkbox" disabled={isReadOnly} checked={getFrontCanopy(config) > 0} onChange={event => setConfig(previous => ({...previous, frontCanopy:event.target.checked ? 50 : 0}))} className="h-5 w-5" />
@@ -709,7 +712,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
         <div className="space-y-3">
           <label className={`flex items-center justify-between p-3 rounded-lg border border-zinc-200 hover:bg-zinc-50 transition-colors bg-white shadow-sm ${isReadOnly ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}>
             <div className="flex items-center gap-3">
-              <input type="checkbox" disabled={isReadOnly || isPir} checked={!isPir && !!config.extraOptions?.includes('roofTile')} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), 'roofTile'] : (config.extraOptions || []).filter(x => x !== 'roofTile'); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
+              <input type="checkbox" disabled={isReadOnly || isPir || secondaryRoof} checked={!isPir && !!config.extraOptions?.includes('roofTile')} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), 'roofTile'] : (config.extraOptions || []).filter(x => x !== 'roofTile'); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
               <span className="text-sm font-semibold text-zinc-700">Dach: Blachodachówka</span>
             </div>
             <span className="text-xs font-bold text-[var(--theme)] bg-[var(--theme)]/10 px-2 py-1 rounded">
@@ -719,7 +722,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
 
           <label className={`flex items-center justify-between p-3 rounded-lg border border-zinc-200 hover:bg-zinc-50 transition-colors bg-white shadow-sm ${isReadOnly ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}>
             <div className="flex items-center gap-3">
-              <input type="checkbox" disabled={isReadOnly || isPir} checked={isPir || config.gutters} onChange={(e) => updateConfig('gutters', e.target.checked)} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
+              <input type="checkbox" disabled={isReadOnly || isPir || secondaryRoof} checked={isPir || config.gutters} onChange={(e) => updateConfig('gutters', e.target.checked)} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
               <span className="text-sm font-semibold text-zinc-700">Rynny i rury spustowe</span>
             </div>
             <span className="text-xs font-bold text-[var(--theme)] bg-[var(--theme)]/10 px-2 py-1 rounded">
@@ -739,7 +742,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
 
           <label className={`flex items-center justify-between p-3 rounded-lg border border-zinc-200 hover:bg-zinc-50 transition-colors bg-white shadow-sm ${isReadOnly ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}`}>
             <div className="flex items-center gap-3">
-              <input type="checkbox" disabled={isReadOnly} checked={config.extraOptions?.includes('roofFlashings') ?? false} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), 'roofFlashings'] : (config.extraOptions || []).filter(x => x !== 'roofFlashings'); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
+              <input type="checkbox" disabled={isReadOnly || secondaryRoof} checked={config.extraOptions?.includes('roofFlashings') ?? false} onChange={(e) => { const next = e.target.checked ? [...(config.extraOptions || []), 'roofFlashings'] : (config.extraOptions || []).filter(x => x !== 'roofFlashings'); updateConfig('extraOptions' as any, next); }} className="w-5 h-5 rounded border-zinc-300 text-[var(--theme)] focus:ring-[var(--theme)] disabled:opacity-50" />
               <span className="text-sm font-semibold text-zinc-700">Obróbki krawędzi dachu</span>
             </div>
             <span className="text-xs font-bold text-zinc-500 bg-zinc-100 px-2 py-1 rounded">
@@ -814,7 +817,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
               { label: 'Kolor rynien', key: 'gutterColor' },
               { label: 'Obróbki narożne', key: 'cornerFlashingColor' },
               { label: 'Obróbki dachu', key: 'roofFlashingColor' },
-            ].map((item) => {
+            ].filter(item => !secondaryRoof || !['roofColor','roofFlashingColor','gutterColor'].includes(item.key)).map((item) => {
               const colorData = getColorData(config[item.key as keyof GarageConfig] as string);
               const isEditingThis = activeColorEdit === item.key;
               

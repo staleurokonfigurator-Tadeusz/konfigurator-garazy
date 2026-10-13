@@ -5,7 +5,7 @@ import { CameraControls, ContactShadows, Edges, Html, Line, useTexture } from '@
 import { GarageConfig, WallFace } from '@/types';
 import MiddleCarport from './MiddleCarport';
 import LightweightEnvironment from './LightweightEnvironment';
-import { getAssemblyLayout } from '@/lib/garageAssembly';
+import { getAssemblyLayout, getSharedRoofProfile } from '@/lib/garageAssembly';
 import GarageModel from './GarageModel';
 import { Suspense, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
@@ -222,6 +222,8 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
 export default function CanvasArea({ config, activeGarage = 0, selectedWall, activeDimId, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
   const renderProfile = useMemo(() => getThreePerformanceProfile(), []);
   const layout = getAssemblyLayout(config);
+  const sharedRoof = getSharedRoofProfile(config);
+  const sharedRoofConfig = {...layout.first,width:layout.width,length:layout.length,height:layout.height,hasCarport:false,elements:[],frontCanopy:layout.frontProjection};
   const edited = activeGarage && layout.second ? layout.second : layout.first;
   const shadowExtent = Math.max(10, layout.width / 100, (layout.length + layout.frontProjection) / 100) * 0.75;
   const contactShadowKey = useMemo(() => JSON.stringify({
@@ -260,10 +262,11 @@ export default function CanvasArea({ config, activeGarage = 0, selectedWall, act
       <Suspense fallback={null}>
         <LightweightEnvironment intensity={0.9} />
         <group name="garageModelGroup">
-          <group position={[layout.firstX/100,0,layout.firstZ/100]}><GarageModel config={layout.first} colors={colors} /></group>
+          <group position={[layout.firstX/100,0,layout.firstZ/100]}><GarageModel config={layout.first} colors={colors} hideRoof={Boolean(sharedRoof)} sharedRoof={sharedRoof || undefined} worldX={layout.firstX} /></group>
           {layout.second && <>
-            <group position={[layout.secondX/100,0,layout.secondZ/100]}><GarageModel config={layout.second} colors={colors} /></group>
+            <group position={[layout.secondX/100,0,layout.secondZ/100]}><GarageModel config={layout.second} colors={colors} hideRoof={Boolean(sharedRoof)} sharedRoof={sharedRoof || undefined} worldX={layout.secondX} /></group>
             <MiddleCarport config={config} colors={colors} />
+            {sharedRoof && <group position={[layout.centerX/100,0,0]} name="sharedAssemblyRoof"><GarageModel config={sharedRoofConfig} colors={colors} roofOnly /></group>}
           </>}
         </group>
         {activeDimId && <group position={activeGarage && layout.second ? [layout.secondX/100,0,layout.secondZ/100] : [layout.firstX/100,0,layout.firstZ/100]}><DimensionsOverlay config={edited} activeId={activeDimId} /></group>}

@@ -2,7 +2,7 @@
 
 import type { Dispatch, SetStateAction } from 'react';
 import type { GarageConfig } from '@/types';
-import { getAssemblyLayout, standaloneUnit } from '@/lib/garageAssembly';
+import { getAssemblyLayout, standaloneUnit, hasSharedAssemblyRoof } from '@/lib/garageAssembly';
 import EditableDimension from './EditableDimension';
 
 interface Props {
@@ -44,13 +44,13 @@ export default function AssemblyPanel({config,setConfig,activeGarage,onSelect,is
         <div className="rounded-xl border border-orange-200 bg-orange-50 p-3">
           <div className="mb-3 flex items-center justify-between gap-2 text-sm font-bold"><span>Wiata pomiędzy garażami</span><EditableDimension label="Wiata środkowa — szerokość" value={layout.gap} min={200} max={600} readOnly={isReadOnly} onChange={setGap}/></div>
           {!isReadOnly && <input aria-label="Wiata środkowa — szerokość" type="range" min={200} max={600} step={1} value={layout.gap} onChange={event=>setGap(Number(event.target.value))} className="w-full" />}
-          <p className="mt-2 text-xs leading-relaxed text-zinc-600">Długość: {layout.middleLength} cm, według krótszego garażu. Wysokość dopasowana do niższego garażu. Cena według obecnej stawki za m² wiaty.</p>
+          <p className="mt-2 text-xs leading-relaxed text-zinc-600">Długość: {layout.middleLength} cm, według krótszego garażu. {hasSharedAssemblyRoof(config) ? 'Wysokość dopasowana do wspólnego dachu.' : 'Wysokość dopasowana do niższego garażu.'} Cena według obecnej stawki za m² wiaty.</p>
         </div>
         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Wybierz garaż do ustawienia">
           {([0,1] as const).map(index=><button key={index} aria-pressed={activeGarage===index} onClick={()=>onSelect(index)} className={`min-h-12 rounded-xl border p-3 text-sm font-bold ${activeGarage===index ? 'bg-zinc-900 text-white border-zinc-900':'bg-white border-zinc-300'}`}>Garaż {index+1} · {index ? 'prawy':'lewy'}</button>)}
         </div>
         <p className="text-sm text-zinc-600">Poniżej ustawiasz <strong>garaż {activeGarage+1}</strong>. Cena obejmuje cały układ.</p>
-        <p className="text-xs text-zinc-500">Łączna szerokość: {layout.width} cm. Fronty garaży są ustawione w jednej linii. Wiata środkowa ma taki sam typ dachu jak garaże.</p>
+        <p className="text-xs text-zinc-500">Łączna szerokość: {layout.width} cm. Fronty garaży są ustawione w jednej linii. {hasSharedAssemblyRoof(config) ? 'Jeden wspólny dach i wysokość okapu nad całym układem. Wykończenie dachu wybierasz przy garażu 1.' : 'Wiata środkowa ma taki sam typ dachu jak garaże.'}</p>
       </>}
     </div>
   </section>;

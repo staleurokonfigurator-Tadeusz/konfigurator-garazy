@@ -9,7 +9,7 @@ import { getThreePerformanceProfile } from '@/lib/threePerformance';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useTexture } from '@react-three/drei';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { getFrontCanopy } from '@/lib/garageAssembly';
+import { getFrontCanopy, sharedRoofHeightAt, type SharedRoofProfile } from '@/lib/garageAssembly';
 import PirPanelJoints from './PirPanelJoints';
 import { clipProfilePolygon, applyWallUV, type ProfilePoint } from '@/lib/profileClipping';
 import { getCarportSides, getCarportSettings, getCarportLayout, type CarportSide } from '@/lib/garageExtras';
@@ -23,6 +23,9 @@ function getColorAppearance(isWood: boolean, colorId: string | undefined, colors
 interface GarageModelProps {
   config: GarageConfig;
   roofOnly?: boolean;
+  hideRoof?: boolean;
+  sharedRoof?: SharedRoofProfile;
+  worldX?: number;
   colors?: any[];
 }
 
@@ -515,7 +518,7 @@ function AnimatedGate({ el, woodColor, woodNormal, woodColorHoriz, woodNormalHor
   );
 }
 
-export default function GarageModel({ config, colors = [], roofOnly = false }: GarageModelProps) {
+export default function GarageModel({ config, colors = [], roofOnly = false, hideRoof = false, sharedRoof, worldX = 0 }: GarageModelProps) {
   const w = (config.width || 300) * 0.01;
   const l = (config.length || 500) * 0.01;
   const h = (config.height || 210) * 0.01;
@@ -534,6 +537,7 @@ export default function GarageModel({ config, colors = [], roofOnly = false }: G
   const maxX = w/2 + carportLayout.right/100;
   const totalW = maxX - minX;
   const centerX = (minX + maxX) / 2; 
+  const gableCenterX = sharedRoof ? ((sharedRoof.minX+sharedRoof.maxX)/2-worldX)/100 : centerX;
 
   const [woodNormalSource, premiumWoodSource, walnutWoodSource, roofTileSource] = useTexture([
     '/textures/drewno-normal-light-v3.webp',
@@ -682,6 +686,7 @@ export default function GarageModel({ config, colors = [], roofOnly = false }: G
   const isRight = rt.includes('right') || rt.includes('prawo');
 
   const getH = (x: number, z: number) => {
+    if (sharedRoof) return sharedRoofHeightAt(sharedRoof,worldX+x*100)/100;
     if (isDualLeftRight) return h + slopeH * (1 - Math.abs(x - centerX) / (totalW / 2));
     if (isDualFrontBack) return h + slopeH * (1 - Math.abs(z) / (l / 2));
     if (isFront) return h + slopeH * (0.5 - z/l);
@@ -694,7 +699,7 @@ export default function GarageModel({ config, colors = [], roofOnly = false }: G
   const createGarageFrontShape = () => {
     const s = new THREE.Shape();
     s.moveTo(-w/2, 0); s.lineTo(w/2, 0); s.lineTo(w/2, getH(w/2, l/2));
-    if (isDualLeftRight && centerX > -w/2 && centerX < w/2) s.lineTo(centerX, getH(centerX, l/2));
+    if (isDualLeftRight && gableCenterX > -w/2 && gableCenterX < w/2) s.lineTo(gableCenterX, getH(gableCenterX, l/2));
     s.lineTo(-w/2, getH(-w/2, l/2));
     s.closePath(); return s;
   };
@@ -702,7 +707,7 @@ export default function GarageModel({ config, colors = [], roofOnly = false }: G
   const createGarageBackShape = () => {
     const s = new THREE.Shape();
     s.moveTo(-w/2, 0); s.lineTo(w/2, 0); s.lineTo(w/2, getH(-w/2, -l/2)); 
-    if (isDualLeftRight && centerX > -w/2 && centerX < w/2) s.lineTo(-centerX, getH(centerX, -l/2));
+    if (isDualLeftRight && gableCenterX > -w/2 && gableCenterX < w/2) s.lineTo(-gableCenterX, getH(gableCenterX, -l/2));
     s.lineTo(-w/2, getH(w/2, -l/2)); 
     s.closePath(); return s;
   };
@@ -1079,13 +1084,13 @@ export default function GarageModel({ config, colors = [], roofOnly = false }: G
     }
 
     const sF = new THREE.Shape();
-    if (cSide === 'right') { sF.moveTo(w/2, h); sF.lineTo(maxX, h); sF.lineTo(maxX, getH(maxX, l/2)); if (isDualLeftRight && centerX > w/2 && centerX < maxX) sF.lineTo(centerX, getH(centerX, l/2)); sF.lineTo(w/2, getH(w/2, l/2)); }
-    else { sF.moveTo(minX, h); sF.lineTo(-w/2, h); sF.lineTo(-w/2, getH(-w/2, l/2)); if (isDualLeftRight && centerX > minX && centerX < -w/2) sF.lineTo(centerX, getH(centerX, l/2)); sF.lineTo(minX, getH(minX, l/2)); }
+    if (cSide === 'right') { sF.moveTo(w/2, h); sF.lineTo(maxX, h); sF.lineTo(maxX, getH(maxX, l/2)); if (isDualLeftRight && gableCenterX > w/2 && gableCenterX < maxX) sF.lineTo(gableCenterX, getH(gableCenterX, l/2)); sF.lineTo(w/2, getH(w/2, l/2)); }
+    else { sF.moveTo(minX, h); sF.lineTo(-w/2, h); sF.lineTo(-w/2, getH(-w/2, l/2)); if (isDualLeftRight && gableCenterX > minX && gableCenterX < -w/2) sF.lineTo(gableCenterX, getH(gableCenterX, l/2)); sF.lineTo(minX, getH(minX, l/2)); }
     sF.closePath();
 
     const sB = new THREE.Shape();
-    if (cSide === 'right') { sB.moveTo(w/2, h); sB.lineTo(maxX, h); sB.lineTo(maxX, getH(maxX, -l/2)); if (isDualLeftRight && centerX > w/2 && centerX < maxX) sB.lineTo(centerX, getH(centerX, -l/2)); sB.lineTo(w/2, getH(w/2, -l/2)); }
-    else { sB.moveTo(minX, h); sB.lineTo(-w/2, h); sB.lineTo(-w/2, getH(-w/2, -l/2)); if (isDualLeftRight && centerX > minX && centerX < -w/2) sB.lineTo(centerX, getH(centerX, -l/2)); sB.lineTo(minX, getH(minX, -l/2)); }
+    if (cSide === 'right') { sB.moveTo(w/2, h); sB.lineTo(maxX, h); sB.lineTo(maxX, getH(maxX, -l/2)); if (isDualLeftRight && gableCenterX > w/2 && gableCenterX < maxX) sB.lineTo(gableCenterX, getH(gableCenterX, -l/2)); sB.lineTo(w/2, getH(w/2, -l/2)); }
+    else { sB.moveTo(minX, h); sB.lineTo(-w/2, h); sB.lineTo(-w/2, getH(-w/2, -l/2)); if (isDualLeftRight && gableCenterX > minX && gableCenterX < -w/2) sB.lineTo(gableCenterX, getH(gableCenterX, -l/2)); sB.lineTo(minX, getH(minX, -l/2)); }
     sB.closePath();
 
     const sS = new THREE.Shape();
@@ -1150,7 +1155,7 @@ export default function GarageModel({ config, colors = [], roofOnly = false }: G
           {renderWallRelief('right', [w / 2 - t, 0, l / 2 - t], Math.PI / 2, true, false)}
           {renderElements('right', [w / 2 - t, 0, l / 2 - t], Math.PI / 2, true, false)}
 
-          {renderRoof()}
+          {!hideRoof && renderRoof()}
           {projection > 0 && config.frontCanopyWalls !== false && [renderCanopySide(false),renderCanopySide(true)]}
         </group>
 

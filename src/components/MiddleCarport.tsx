@@ -4,7 +4,7 @@ import { useEffect, useMemo } from 'react';
 import { useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import type { GarageConfig } from '@/types';
-import { getAssemblyLayout } from '@/lib/garageAssembly';
+import { getAssemblyLayout, getSharedRoofProfile, sharedRoofHeightAt } from '@/lib/garageAssembly';
 import GarageModel from './GarageModel';
 import { getSheetAppearance } from '@/lib/surfaceAppearance';
 
@@ -25,8 +25,10 @@ export default function MiddleCarport({config,colors}: {config: GarageConfig;col
     texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=2; return texture;
   }),[oak,walnut]);
   useEffect(()=>()=>textures.forEach(texture=>texture.dispose()),[textures]);
+  const sharedRoof = getSharedRoofProfile(config);
   const height = layout.middleHeight / 100;
   const roofHeight = (x: number,z: number) => {
+    if (sharedRoof) return sharedRoofHeightAt(sharedRoof,layout.middleX+x*100)/100;
     const rise=0.4, type=layout.first.roofType;
     if(type==='dual-slope') return height+rise*(1-Math.abs(x)/(width/2));
     if(type==='dual-slope-front-back') return height+rise*(1-Math.abs(z)/(depth/2));
@@ -43,15 +45,17 @@ export default function MiddleCarport({config,colors}: {config: GarageConfig;col
     const rotation=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),direction.clone().normalize());
     return <mesh key={key} castShadow position={center} quaternion={rotation}><boxGeometry args={[0.08,direction.length(),0.12]}/>{postMaterial}</mesh>;
   };
+  const crossPoints = Array.from(new Set([-width/2+0.07,sharedRoof && config.roofType === 'dual-slope' ? Math.max(-width/2+0.07,Math.min(width/2-0.07,((sharedRoof.minX+sharedRoof.maxX)/2-layout.middleX)/100)) : 0,width/2-0.07])).sort((a,b)=>a-b);
   const postMaterial = <meshStandardMaterial color={posts.wood ? '#ffffff':posts.hex} map={posts.wood? textures[posts.walnut?1:0]:undefined} {...getSheetAppearance(posts.wood,posts.type)} />;
   return <group name="middleCarport" position={[layout.middleX/100,0,(layout.length-layout.middleLength)/200]}>
-    <GarageModel config={roofConfig} colors={colors} roofOnly />
+    {!sharedRoof && <GarageModel config={roofConfig} colors={colors} roofOnly />}
     {([-1,1] as const).flatMap(side=>postRows.map((z,index)=>{
       const postHeight=roofHeight(side*(width/2-0.07),z)-0.09;
       return <mesh key={`${side}-${index}`} castShadow position={[side*(width/2-0.07),postHeight/2,z]}><boxGeometry args={[0.08,postHeight,0.08]}/>{postMaterial}</mesh>;
     }))}
     {([-1,1] as const).flatMap(side=>postRows.slice(1).map((z,index)=>beam(new THREE.Vector3(side*(width/2-0.07),roofHeight(side*(width/2-0.07),postRows[index])-0.09,postRows[index]),new THREE.Vector3(side*(width/2-0.07),roofHeight(side*(width/2-0.07),z)-0.09,z),side+'-'+index)))}
-    {[-depth/2,depth/2].flatMap(z=>([-1,1] as const).map(side=>beam(new THREE.Vector3(side*(width/2-0.07),roofHeight(side*(width/2-0.07),z)-0.09,z),new THREE.Vector3(0,roofHeight(0,z)-0.09,z),z+'-'+side)))}
+    {[-depth/2,depth/2].flatMap(z=>crossPoints.slice(1).map((x,index)=>beam(new THREE.Vector3(crossPoints[index],roofHeight(crossPoints[index],z)-0.09,z),new THREE.Vector3(x,roofHeight(x,z)-0.09,z),z+'-'+index)))}
+
 
   </group>;
 }

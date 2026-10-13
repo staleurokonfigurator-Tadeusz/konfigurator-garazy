@@ -1,4 +1,4 @@
-import { getAssemblyLayout, getFrontCanopy } from './garageAssembly';
+import { getAssemblyLayout, getFrontCanopy, getSharedRoofProfile, sharedRoofHeightAt, type SharedRoofProfile } from './garageAssembly';
 import { getCarportLayout, getCarportSides, getCarportSettings } from './garageExtras';
 import type { GarageConfig, GarageElement, WallFace } from '@/types';
 import {
@@ -214,6 +214,8 @@ function drawElevationPlan(
   y: number,
   maxWidth: number,
   maxHeight = 48,
+  sharedRoof?: SharedRoofProfile | null,
+  worldX = 0,
 ) {
   const isFrontBack = wall === 'front' || wall === 'back';
   const wallWidthCm = isFrontBack ? config.width : config.length;
@@ -239,14 +241,26 @@ function drawElevationPlan(
     || (config.roofType === 'slope-front' && wall === 'left')
     || (config.roofType === 'slope-back' && wall === 'right');
   const showsDualGable = (isDualLeftRight && isFrontBack) || (isDualFrontBack && !isFrontBack);
-  const visibleRoofRise = showsDualGable || slopesAcrossThisWall ? roofRise : 1.5;
+  const visibleRoofRise = sharedRoof ? 40*scale : showsDualGable || slopesAcrossThisWall ? roofRise : 1.5;
   const roofBaseYAt = (pointX: number) => {
+    if (sharedRoof) {
+      const world = isFrontBack ? worldX + (wall === 'back' ? -1 : 1)*((pointX-garageX)/scale-config.width/2) : worldX + (wall === 'left' ? -1 : 1)*config.width/2;
+      return y - (sharedRoofHeightAt(sharedRoof,world)-config.height)*scale;
+    }
     if (!slopesAcrossThisWall || width <= 0) return y;
     const leftY = highOnLeft ? y - roofRise : y;
     const rightY = highOnLeft ? y : y - roofRise;
     return leftY + ((pointX - x) / width) * (rightY - leftY);
   };
+  const sharedRidge = sharedRoof && isFrontBack && config.roofType === 'dual-slope' ? garageX + (config.width/2 + (wall === 'back' ? -1 : 1)*((sharedRoof.minX+sharedRoof.maxX)/2-worldX))*scale : null;
+  const roofBreakpoints = (from: number,to: number) => [from,...(sharedRidge !== null && sharedRidge > from && sharedRidge < to ? [sharedRidge] : []),to];
   const drawWallOutline = (sectionX: number, sectionWidth: number, style?: string) => {
+    if (sharedRoof) {
+      const points = roofBreakpoints(sectionX,sectionX+sectionWidth).map(pointX=>[pointX,roofBaseYAt(pointX)]);
+      points.push([sectionX+sectionWidth,y+wallHeight],[sectionX,y+wallHeight]);
+      const deltas=points.slice(1).map((point,index)=>[point[0]-points[index][0],point[1]-points[index][1]]);
+      doc.lines(deltas,points[0][0],points[0][1],[1,1],style,true);return;
+    }
     if (!slopesAcrossThisWall) {
       doc.rect(sectionX, y, sectionWidth, wallHeight, style);
       return;
@@ -308,7 +322,11 @@ function drawElevationPlan(
   const roofLeft = x - overhang;
   const roofRight = x + width + overhang;
   const roofWidth = roofRight - roofLeft;
-  if (showsDualGable) {
+  if (sharedRoof) {
+    const top=roofBreakpoints(roofLeft,roofRight).map(pointX=>[pointX,roofBaseYAt(pointX)]);
+    const points=[...top,...top.slice().reverse().map(([pointX,pointY])=>[pointX,pointY-roofThickness])];
+    doc.lines(points.slice(1).map((point,index)=>[point[0]-points[index][0],point[1]-points[index][1]]),points[0][0],points[0][1],[1,1],'FD',true);
+  } else if (showsDualGable) {
     const ridgeX = x + width / 2;
     doc.lines([
       [ridgeX - roofLeft, -roofRise],
@@ -453,6 +471,35 @@ function drawTechnicalLegend(doc: import('jspdf').jsPDF, y: number, includeOffse
   doc.setTextColor(30, 30, 30);
 }
 
+function drawSharedAssemblyElevation(doc: import('jspdf').jsPDF, config: GarageConfig, x: number,y: number,maxWidth: number,maxHeight: number) {
+  const layout=getAssemblyLayout(config),profile=getSharedRoofProfile(config);
+  if (!profile || !layout.second) return;
+  const scale=Math.min(maxWidth/layout.width,maxHeight/(layout.height+40));
+  const sx=(world: number)=>x+(world-profile.minX)*scale;
+  const sy=(height: number)=>y+(layout.height+40-height)*scale;
+  const bottom=sy(0),center=(profile.minX+profile.maxX)/2;
+  doc.setDrawColor(PDF_INK);doc.setLineWidth(0.5);doc.setFillColor('#e2e8f0');
+  for (const [unit,offset] of [[layout.first,layout.firstX],[layout.second,layout.secondX]] as const) {
+    const left=offset-unit.width/2,right=offset+unit.width/2;
+    const top=[left,...(config.roofType==='dual-slope' && center>left && center<right ? [center]:[]),right].map(world=>[sx(world),sy(sharedRoofHeightAt(profile,world))]);
+    const points=[...top,[sx(right),bottom],[sx(left),bottom]];
+    doc.lines(points.slice(1).map((point,index)=>[point[0]-points[index][0],point[1]-points[index][1]]),points[0][0],points[0][1],[1,1],'FD',true);
+    for (const element of unit.elements.filter(element=>element.wall==='front')) {
+      doc.setFillColor('#fff7ed');doc.setDrawColor('#ea580c');
+      doc.rect(sx(offset+element.x-element.width/2),bottom-(element.y+element.height)*scale,element.width*scale,element.height*scale,'FD');
+    }
+  }
+  doc.setDrawColor(PDF_INK);doc.setLineWidth(1.3);
+  const roof=[profile.minX,...(config.roofType==='dual-slope' ? [center]:[]),profile.maxX];
+  roof.slice(1).forEach((world,index)=>doc.line(sx(roof[index]),sy(sharedRoofHeightAt(profile,roof[index])),sx(world),sy(sharedRoofHeightAt(profile,world))));
+  doc.setLineWidth(0.8);
+  for (const world of [layout.middleX-layout.gap/2,layout.middleX+layout.gap/2]) doc.line(sx(world),sy(sharedRoofHeightAt(profile,world)),sx(world),bottom);
+  doc.setFont(PDF_FONT,'normal');doc.setFontSize(8);doc.setTextColor(PDF_INK);
+  doc.text('GARAŻ 1',sx(layout.firstX),bottom+7,{align:'center'});doc.text('WIATA',sx(layout.middleX),bottom+7,{align:'center'});doc.text('GARAŻ 2',sx(layout.secondX),bottom+7,{align:'center'});
+  doc.text('Wspólna szerokość dachu: '+layout.width+' cm',x,bottom+17);
+  doc.text('Wysokość okapu: '+layout.height+' cm / przyrost wysokości dachu: 40 cm',x,bottom+24);
+}
+
 export async function generateOfferPdf(input: OfferPdfInput) {
   const [{ jsPDF }, QRCode] = await Promise.all([import('jspdf'), import('qrcode')]);
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true, putOnlyUsedFonts: true });
@@ -545,6 +592,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   }
 
   const assembly = getAssemblyLayout(config);
+  const sharedRoof = getSharedRoofProfile(config);
   if (assembly.second) {
     layout.page('Układ dwóch garaży i wiaty');
     const scale = Math.min(150 / assembly.width, 108 / (assembly.length + assembly.frontProjection));
@@ -566,12 +614,19 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     layout.font(8,true);doc.text('WIATA',middleX+assembly.gap*scale/2,82+(assembly.length-assembly.middleLength/2)*scale,{align:'center'});
     layout.font(10,true);doc.text('Szerokość całego układu: ' + assembly.width + ' cm',16,64);
     doc.text('PRZÓD / WJAZD',105,82+(assembly.length+assembly.frontProjection)*scale+10,{align:'center'});
+    if (sharedRoof) {doc.setDrawColor(PDF_INK);doc.setLineDashPattern([3,1],0);doc.rect(origin,82,assembly.width*scale,(assembly.length+assembly.frontProjection)*scale);doc.setLineDashPattern([],0);}
     layout.table(['ELEMENT','WYMIARY'],[
       ['Garaż 1',assembly.first.width+' × '+assembly.first.length+' × '+assembly.first.height+' cm'],
       ['Garaż 2',assembly.second.width+' × '+assembly.second.length+' × '+assembly.second.height+' cm'],
       ['Wiata środkowa',assembly.gap+' × '+assembly.middleLength+' cm / dach: '+(roofNames[assembly.first.roofType] || assembly.first.roofType)+''],
       ['Wypusty PIR','Garaż 1: '+getFrontCanopy(assembly.first)+' cm / Garaż 2: '+getFrontCanopy(assembly.second)+' cm'],
     ],[55,123],218,'Układ - ciąg dalszy');
+  }
+  if (sharedRoof) {
+    layout.page('Jeden dach nad całym układem');
+    layout.font(9,false,PDF_MUTED);doc.text('Wspólna kalenica lub jedna połać nad garażami i wiatą.',16,55);
+    drawPdfCard(doc,16,68,178,155,'#f8fafc');
+    drawSharedAssemblyElevation(doc,input.config,28,98,154,80);
   }
   for (const [unitIndex, config] of (assembly.second ? [assembly.first,assembly.second] : [assembly.first]).entries()) {
   const carportWidth = getCarportWidthCm(config);
@@ -593,7 +648,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     ['Materiał ścian i dachu', materialLabel(config)],
     ['Profil wzmocniony 60×40',config.buildingMaterial === 'pir' ? 'W cenie PIR' : 'Według wybranych opcji'],
     ['Wypust przed garażem', getFrontCanopy(config) ? `${getFrontCanopy(config)} cm / w cenie PIR / ściany boczne: ${config.frontCanopyWalls !== false ? 'tak' : 'nie'}` : 'Nie'],
-    ['Typ dachu', roofNames[config.roofType] || config.roofType],
+    ['Typ dachu', (roofNames[config.roofType] || config.roofType)+(sharedRoof ? ' / wspólny dla całego układu' : '')],
     ['Pokrycie dachu', config.buildingMaterial === 'pir' ? `${materialLabel(config)} / ${profileLabel('pionowe-t7')}` : config.extraOptions?.includes('roofTile') ? 'Blachodachówka' : `Blacha trapezowa / ${profileLabel('pionowe-t7')}`],
     ['Ściany', `${config.buildingMaterial === 'pir' ? materialLabel(config) : profileLabel(config.wallProfile)}\nKolor: ${color(config.wallColor)}`],
     ['Dach - kolor', color(config.roofColor)],
@@ -646,10 +701,10 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   layout.font(9, false, PDF_MUTED);
   doc.text('Położenie bram, drzwi, okien i świetlików dla każdej ściany.', 16, 55);
   [[16, 65, 85, 87], [109, 65, 85, 87], [16, 158, 85, 84], [109, 158, 85, 84]].forEach(([x, y, w, h]) => drawPdfCard(doc, x, y, w, h));
-  drawElevationPlan(doc, config, 'front', 'Elewacja frontowa', 27, 93, 66, 38);
-  drawElevationPlan(doc, config, 'right', 'Elewacja prawa', 120, 93, 66, 38);
-  drawElevationPlan(doc, config, 'back', 'Elewacja tylna', 27, 187, 66, 38);
-  drawElevationPlan(doc, config, 'left', 'Elewacja lewa', 120, 187, 66, 38);
+  drawElevationPlan(doc, config, 'front', 'Elewacja frontowa', 27, 93, 66, 38,sharedRoof,unitIndex===0 ? assembly.firstX : assembly.secondX);
+  drawElevationPlan(doc, config, 'right', 'Elewacja prawa', 120, 93, 66, 38,sharedRoof,unitIndex===0 ? assembly.firstX : assembly.secondX);
+  drawElevationPlan(doc, config, 'back', 'Elewacja tylna', 27, 187, 66, 38,sharedRoof,unitIndex===0 ? assembly.firstX : assembly.secondX);
+  drawElevationPlan(doc, config, 'left', 'Elewacja lewa', 120, 187, 66, 38,sharedRoof,unitIndex===0 ? assembly.firstX : assembly.secondX);
   drawTechnicalLegend(doc, 244, true);
 
   if (getFrontCanopy(config)) {

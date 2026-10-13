@@ -268,3 +268,39 @@ test('composition files retain both units and reject nesting, invalid bounds and
   assert.equal(extras.normalizeDimension('211',200,350),211);
   assert.equal(extras.normalizeDimension('501',300,3000),501);
 });
+
+test('one crosswise roof spans both garages and the carport with one ridge or one continuous slope',()=>{
+  for(const roofType of ['dual-slope','slope-left','slope-right']) {
+    const config={...fullConfig,width:301,length:501,height:211,roofType,hasCarport:true,carportSide:'left',carportLeft:{width:111},assembly:{gapWidth:301,second:{...fullConfig,width:401,length:601,height:221,hasCarport:true,carportSide:'right',carportRight:{width:123}}}};
+    const layout=assembly.getAssemblyLayout(config),profile=assembly.getSharedRoofProfile(config);
+    assert.equal(layout.first.height,221);assert.equal(layout.second.height,221);
+    assert.equal(profile.maxX-profile.minX,301+401+301+111+123);
+    const center=(profile.minX+profile.maxX)/2;
+    if(roofType==='dual-slope') {
+      assert.equal(assembly.sharedRoofHeightAt(profile,center),261);
+      assert.equal(assembly.sharedRoofHeightAt(profile,profile.minX),221);
+      assert.equal(assembly.sharedRoofHeightAt(profile,profile.maxX),221);
+    } else {
+      assert.equal(assembly.sharedRoofHeightAt(profile,center),241);
+      assert.equal(Math.abs(assembly.sharedRoofHeightAt(profile,profile.minX)-assembly.sharedRoofHeightAt(profile,profile.maxX)),40);
+    }
+    for(const boundary of [layout.firstX+layout.first.width/2,layout.secondX-layout.second.width/2]) {
+      const fromLeft=assembly.sharedRoofHeightAt(profile,boundary-0.00001),fromRight=assembly.sharedRoofHeightAt(profile,boundary+0.00001);
+      assert.ok(Math.abs(fromLeft-fromRight)<0.00001);
+    }
+    const normalized=options.cleanUnavailableOptions(config,[]);
+    assert.equal(normalized.height,normalized.assembly.second.height);
+    assert.deepEqual(assembly.normalizeSharedRoof(normalized),normalized);
+    const expected=price({...layout.first,hasCarport:true})+price({...layout.second,hasCarport:true})+301*501/10000*100;
+    assert.equal(price(config),Math.round(expected*100)/100);
+  }
+});
+test('front/back roofs and single garages keep their existing geometry and independent heights',()=>{
+  for(const roofType of ['slope-front','slope-back','dual-slope-front-back']) {
+    const config={...fullConfig,width:301,length:501,height:211,roofType,assembly:{gapWidth:300,second:{...fullConfig,width:401,length:601,height:231}}};
+    assert.equal(assembly.getSharedRoofProfile(config),null);
+    assert.equal(assembly.getAssemblyLayout(config).first.height,211);assert.equal(assembly.getAssemblyLayout(config).second.height,231);
+    assert.equal(assembly.normalizeSharedRoof(config),config);
+  }
+  assert.equal(assembly.getSharedRoofProfile(fullConfig),null);
+});

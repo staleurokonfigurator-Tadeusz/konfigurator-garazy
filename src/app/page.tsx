@@ -11,7 +11,7 @@ import dynamic from 'next/dynamic';
 import { Eye, X } from 'lucide-react';
 import Script from 'next/script';
 import AssemblyPanel from '@/components/AssemblyPanel';
-import { standaloneUnit } from '@/lib/garageAssembly';
+import { standaloneUnit, hasSharedAssemblyRoof, getAssemblyLayout } from '@/lib/garageAssembly';
 import ProjectToolbar from '@/components/ProjectToolbar';
 import { projectStorageKey, readDraft, writeDraft } from '@/lib/projectStorage';
 import { cleanUnavailableOptions } from '@/lib/garageOptions';
@@ -160,14 +160,16 @@ export default function Home() {
     setConfig(previous => cleanUnavailableOptions(typeof next === 'function' ? next(previous) : next, appData?.addons || []));
   }, [appData]);
   const editSecond = activeGarage === 1 && Boolean(config.assembly);
-  const editedConfig = editSecond ? config.assembly!.second : config;
+  const editLayout = getAssemblyLayout(config);
+  const editedConfig = editSecond ? editLayout.second! : (config.assembly ? {...editLayout.first,assembly:config.assembly} : config);
   const setEditedConfig: React.Dispatch<React.SetStateAction<GarageConfig>> = next => setGarageConfig(previous => {
     if (editSecond && previous.assembly) {
       const second = standaloneUnit(cleanUnavailableOptions(typeof next === 'function' ? next(previous.assembly.second) : next, appData?.addons || []), 'right');
-      return {...previous,roofType:second.roofType,assembly:{...previous.assembly,second}};
+      const commonHeight = hasSharedAssemblyRoof({...previous,roofType:second.roofType}) && second.height !== previous.assembly.second.height;
+      return {...previous,roofType:second.roofType,height:commonHeight ? second.height : previous.height,assembly:{...previous.assembly,second}};
     }
-    const unit = cleanUnavailableOptions(typeof next === 'function' ? next(previous) : next, appData?.addons || []);
-    return previous.assembly ? {...standaloneUnit(unit,'left'),assembly:{...previous.assembly,second:{...previous.assembly.second,roofType:unit.roofType}}} : unit;
+    const unit = typeof next === 'function' ? next({...previous,height:editedConfig.height}) : next;
+    return previous.assembly ? {...standaloneUnit(unit,'left'),assembly:{...previous.assembly,second:{...previous.assembly.second,roofType:unit.roofType,height:hasSharedAssemblyRoof({...previous,roofType:unit.roofType}) && unit.height !== previous.height ? unit.height : previous.assembly.second.height}}} : unit;
   });
   const resetProject = () => {
     setGarageConfig({ ...initialProject.current, elements: initialProject.current.elements.map(element => ({...element, id:uuidv4()})) });

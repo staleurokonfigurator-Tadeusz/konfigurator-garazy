@@ -1,3 +1,4 @@
+import { normalizeSharedRoof } from './garageAssembly';
 import type { GarageConfig, GarageElement } from '@/types';
 import { checkCollision, checkWallBounds, findValidPosition, getElementRect } from './collision';
 
@@ -13,6 +14,7 @@ export function isAddonAvailable(config: Pick<GarageConfig, 'elements'>, addon: 
 }
 
 export function cleanUnavailableOptions(config: GarageConfig, addons: PricedAddon[]): GarageConfig {
+  config = normalizeSharedRoof(config);
   const extraOptions = config.extraOptions?.filter(id => {
     const addon = addons.find(item => item.id === id);
     return !addon || isAddonAvailable(config, addon);
@@ -22,7 +24,7 @@ export function cleanUnavailableOptions(config: GarageConfig, addons: PricedAddo
   if ((normalized.buildingMaterial === 'pir' && !normalized.gutters) || 'roofRiseCm' in obsolete) {
     const cleaned = { ...normalized, gutters: normalized.buildingMaterial === 'pir' || normalized.gutters };
     delete (cleaned as GarageConfig & { roofRiseCm?: unknown }).roofRiseCm;
-    return cleaned;
+    return normalizeSharedRoof(cleaned);
   }
   return normalized;
 }
