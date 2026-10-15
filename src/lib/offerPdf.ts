@@ -1,3 +1,4 @@
+import { previewRoofHeight, elevationPosition, planOpeningRange, PDF_ROOF_HEIGHT_NOTICE, PREVIEW_ROOF_RISE_CM } from './roofDimensions';
 import { getAssemblyLayout, getFrontCanopy, getSharedRoofProfile, sharedRoofHeightAt, type SharedRoofProfile } from './garageAssembly';
 import { getCarportLayout, getCarportSides, getCarportSettings } from './garageExtras';
 import type { GarageConfig, GarageElement, WallFace } from '@/types';
@@ -158,8 +159,7 @@ function drawDimensionPlan(doc: import('jspdf').jsPDF, config: GarageConfig, x: 
   const markOpening = (element: GarageElement, index: number) => {
     const isHorizontalWall = element.wall === 'front' || element.wall === 'back';
     const wallSize = isHorizontalWall ? config.width : config.length;
-    const start = Math.max(0, Math.min(wallSize, wallSize / 2 + element.x - element.width / 2));
-    const end = Math.max(start, Math.min(wallSize, start + element.width));
+    const [start, end] = planOpeningRange(element.wall, wallSize, element.x, element.width);
     const code = (element.type === 'gate' ? 'BR' : element.type === 'door' ? 'D' : element.type === 'pvc-window' ? 'OP' : element.type === 'window' ? 'O' : 'S') + (index + 1);
 
     doc.setDrawColor(234, 88, 12);
@@ -223,7 +223,7 @@ function drawElevationPlan(
   const integratedCarportWidthCm = getCarportWidthCm(config);
   const carportWidthCm = isFrontBack ? integratedCarportWidthCm : 0;
   const drawingWidthCm = wallWidthCm + carportWidthCm;
-  const scale = Math.min(maxWidth / drawingWidthCm, maxHeight / config.height);
+  const scale = Math.min(maxWidth / drawingWidthCm, maxHeight / (config.height + PREVIEW_ROOF_RISE_CM));
   const width = drawingWidthCm * scale;
   const garageWidth = wallWidthCm * scale;
   const carports = getPdfCarports(config);
@@ -231,56 +231,30 @@ function drawElevationPlan(
   const leftWidth = isFrontBack ? (carports.find(item => item.side === paperLeft)?.width || 0) : 0;
   const garageX = x + leftWidth * scale;
   const wallHeight = config.height * scale;
-  const isDualLeftRight = config.roofType === 'dual-slope';
-  const isDualFrontBack = config.roofType === 'dual-slope-front-back';
-  const isDual = isDualLeftRight || isDualFrontBack;
-  const roofRise = isDual ? Math.min(16, width * 0.16) : Math.min(10, width * 0.1);
-  const slopesAcrossThisWall = ((wall === 'front' || wall === 'back') && (config.roofType === 'slope-left' || config.roofType === 'slope-right'))
-    || ((wall === 'left' || wall === 'right') && (config.roofType === 'slope-front' || config.roofType === 'slope-back'));
-  const highOnLeft = (config.roofType === 'slope-right' && wall === 'front')
-    || (config.roofType === 'slope-left' && wall === 'back')
-    || (config.roofType === 'slope-front' && wall === 'left')
-    || (config.roofType === 'slope-back' && wall === 'right');
-  const showsDualGable = (isDualLeftRight && isFrontBack) || (isDualFrontBack && !isFrontBack);
-  const visibleRoofRise = sharedRoof ? 40*scale : showsDualGable || slopesAcrossThisWall ? roofRise : 1.5;
   const roofBaseYAt = (pointX: number) => {
-    if (sharedRoof) {
-      const world = isFrontBack ? worldX + (wall === 'back' ? -1 : 1)*((pointX-garageX)/scale-config.width/2) : worldX + (wall === 'left' ? -1 : 1)*config.width/2;
-      return y - (sharedRoofHeightAt(sharedRoof,world)-config.height)*scale;
-    }
-    if (!slopesAcrossThisWall || width <= 0) return y;
-    const leftY = highOnLeft ? y - roofRise : y;
-    const rightY = highOnLeft ? y : y - roofRise;
-    return leftY + ((pointX - x) / width) * (rightY - leftY);
+    const [localX, localZ] = elevationPosition(config, wall, (pointX - garageX) / scale);
+    return y - (previewRoofHeight(config, localX, localZ, sharedRoof, worldX) - config.height) * scale;
   };
-  const sharedRidge = sharedRoof && isFrontBack && config.roofType === 'dual-slope' ? garageX + (config.width/2 + (wall === 'back' ? -1 : 1)*((sharedRoof.minX+sharedRoof.maxX)/2-worldX))*scale : null;
-  const roofBreakpoints = (from: number,to: number) => [from,...(sharedRidge !== null && sharedRidge > from && sharedRidge < to ? [sharedRidge] : []),to];
+  let ridge: number | null = null;
+  if (config.roofType === 'dual-slope' && isFrontBack) {
+    const sides = getCarportLayout(config);
+    const localRidge = sharedRoof ? (sharedRoof.minX + sharedRoof.maxX) / 2 - worldX : (sides.right - sides.left) / 2;
+    ridge = garageX + (config.width / 2 + (wall === 'back' ? -1 : 1) * localRidge) * scale;
+  } else if (config.roofType === 'dual-slope-front-back' && !isFrontBack) ridge = garageX + garageWidth / 2;
+  const roofBreakpoints = (from: number, to: number) => [from, ...(ridge !== null && ridge > from && ridge < to ? [ridge] : []), to];
+  const visibleRoofRise = Math.max(0, ...roofBreakpoints(x, x + width).map(pointX => y - roofBaseYAt(pointX)));
   const drawWallOutline = (sectionX: number, sectionWidth: number, style?: string) => {
-    if (sharedRoof) {
-      const points = roofBreakpoints(sectionX,sectionX+sectionWidth).map(pointX=>[pointX,roofBaseYAt(pointX)]);
-      points.push([sectionX+sectionWidth,y+wallHeight],[sectionX,y+wallHeight]);
-      const deltas=points.slice(1).map((point,index)=>[point[0]-points[index][0],point[1]-points[index][1]]);
-      doc.lines(deltas,points[0][0],points[0][1],[1,1],style,true);return;
-    }
-    if (!slopesAcrossThisWall) {
-      doc.rect(sectionX, y, sectionWidth, wallHeight, style);
-      return;
-    }
-    const leftY = roofBaseYAt(sectionX);
-    const rightY = roofBaseYAt(sectionX + sectionWidth);
-    const bottomY = y + wallHeight;
-    doc.lines([
-      [sectionWidth, rightY - leftY],
-      [0, bottomY - rightY],
-      [-sectionWidth, 0],
-      [0, leftY - bottomY],
-    ], sectionX, leftY, [1, 1], style, true);
+    const points = roofBreakpoints(sectionX, sectionX + sectionWidth).map(pointX => [pointX, roofBaseYAt(pointX)]);
+    points.push([sectionX + sectionWidth, y + wallHeight], [sectionX, y + wallHeight]);
+    doc.lines(points.slice(1).map((point,index) => [point[0]-points[index][0], point[1]-points[index][1]]), points[0][0], points[0][1], [1,1], style, true);
   };
 
   doc.setFont(PDF_FONT, 'bold');
   doc.setFontSize(10);
   doc.setTextColor(PDF_INK);
   doc.text(title, x, y - visibleRoofRise - 6);
+  doc.setFont(PDF_FONT, 'normal');doc.setFontSize(5.5);
+  doc.text('Szczyt / H max: po konsultacji', x, y - visibleRoofRise - 2.5);
   doc.setDrawColor(35, 35, 35);
   doc.setLineWidth(0.5);
   doc.setFillColor(255, 255, 255);
@@ -322,37 +296,9 @@ function drawElevationPlan(
   const roofThickness = 1.4;
   const roofLeft = x - overhang;
   const roofRight = x + width + overhang;
-  const roofWidth = roofRight - roofLeft;
-  if (sharedRoof) {
-    const top=roofBreakpoints(roofLeft,roofRight).map(pointX=>[pointX,roofBaseYAt(pointX)]);
-    const points=[...top,...top.slice().reverse().map(([pointX,pointY])=>[pointX,pointY-roofThickness])];
-    doc.lines(points.slice(1).map((point,index)=>[point[0]-points[index][0],point[1]-points[index][1]]),points[0][0],points[0][1],[1,1],'FD',true);
-  } else if (showsDualGable) {
-    const ridgeX = x + width / 2;
-    doc.lines([
-      [ridgeX - roofLeft, -roofRise],
-      [roofRight - ridgeX, roofRise],
-      [0, -roofThickness],
-      [ridgeX - roofRight, -roofRise],
-      [roofLeft - ridgeX, roofRise],
-      [0, roofThickness],
-    ], roofLeft, y, [1, 1], 'FD', true);
-  } else if (isDual) {
-    doc.rect(roofLeft, y - roofThickness, roofWidth, roofThickness, 'FD');
-  } else {
-    if (slopesAcrossThisWall) {
-      const leftY = highOnLeft ? y - roofRise : y;
-      const rightY = highOnLeft ? y : y - roofRise;
-      doc.lines([
-        [roofWidth, rightY - leftY],
-        [0, -roofThickness],
-        [-roofWidth, leftY - rightY],
-        [0, roofThickness],
-      ], roofLeft, leftY, [1, 1], 'FD', true);
-    } else {
-      doc.rect(roofLeft, y - roofThickness, roofWidth, roofThickness, 'FD');
-    }
-  }
+  const top = roofBreakpoints(roofLeft, roofRight).map(pointX => [pointX, roofBaseYAt(pointX)]);
+  const roofPoints = [...top, ...top.slice().reverse().map(([pointX,pointY]) => [pointX, pointY - roofThickness])];
+  doc.lines(roofPoints.slice(1).map((point,index) => [point[0]-roofPoints[index][0], point[1]-roofPoints[index][1]]), roofPoints[0][0], roofPoints[0][1], [1,1], 'FD', true);
 
   const elementCodes: Record<GarageElement['type'], string> = {
     gate: 'BR', door: 'D', window: 'O', 'pvc-window': 'OP', skylight: 'S',
@@ -395,6 +341,10 @@ function drawElevationPlan(
   doc.line(x, y + wallHeight + 5, x + width, y + wallHeight + 5);
   doc.line(x, y + wallHeight + 3, x, y + wallHeight + 7);
   doc.line(x + width, y + wallHeight + 3, x + width, y + wallHeight + 7);
+  // H min ends at the lower eaves datum, even on a taller wall.
+  if (Math.abs(roofBaseYAt(x) - y) > 0.1 || Math.abs(roofBaseYAt(x + width) - y) > 0.1) {
+    doc.setLineDashPattern([1,1],0); doc.line(x,y,x+width,y); doc.setLineDashPattern([],0);
+  }
   doc.line(x - 5, y, x - 5, y + wallHeight);
   doc.line(x - 7, y, x - 3, y);
   doc.line(x - 7, y + wallHeight, x - 3, y + wallHeight);
@@ -405,7 +355,7 @@ function drawElevationPlan(
     doc.setFontSize(5.8);
     doc.text(`Garaż ${wallWidthCm} cm + wiata ${carportWidthCm} cm`, x + width / 2, y + wallHeight + 14, { align: 'center' });
   }
-  doc.text(`${config.height} cm`, x - 8, y + wallHeight / 2, { angle: 90, align: 'center' });
+  doc.text(`H min ${config.height} cm`, x - 8, y + wallHeight / 2, { angle: 90, align: 'center' });
 }
 
 function drawCarportTechnicalPage(doc: import('jspdf').jsPDF, config: GarageConfig) {
@@ -481,6 +431,16 @@ function drawSharedAssemblyElevation(doc: import('jspdf').jsPDF, config: GarageC
   const bottom=sy(0),center=(profile.minX+profile.maxX)/2;
   doc.setDrawColor(PDF_INK);doc.setLineWidth(0.5);doc.setFillColor('#e2e8f0');
   for (const [unit,offset] of [[layout.first,layout.firstX],[layout.second,layout.secondX]] as const) {
+    const sides = getCarportLayout(unit);
+    for (const [from,to] of [[offset-unit.width/2-sides.left,offset-unit.width/2],[offset+unit.width/2,offset+unit.width/2+sides.right]]) {
+      if (to <= from) continue;
+      doc.setDrawColor(PDF_MUTED);doc.setLineWidth(0.5);doc.setLineDashPattern([2,1],0);
+      doc.line(sx(from),bottom,sx(to),bottom);
+      for (const world of [from,to]) doc.line(sx(world),sy(sharedRoofHeightAt(profile,world)),sx(world),bottom);
+      doc.setLineDashPattern([],0);doc.setFont(PDF_FONT,'normal');doc.setFontSize(6.5);
+      doc.text('WIATA',sx((from+to)/2),bottom+7,{align:'center'});
+    }
+    doc.setDrawColor(PDF_INK);doc.setLineWidth(0.5);doc.setFillColor('#e2e8f0');
     const left=offset-unit.width/2,right=offset+unit.width/2;
     const top=[left,...(config.roofType==='dual-slope' && center>left && center<right ? [center]:[]),right].map(world=>[sx(world),sy(sharedRoofHeightAt(profile,world))]);
     const points=[...top,[sx(right),bottom],[sx(left),bottom]];
@@ -504,7 +464,13 @@ function drawSharedAssemblyElevation(doc: import('jspdf').jsPDF, config: GarageC
   doc.setFont(PDF_FONT,'normal');doc.setFontSize(8);doc.setTextColor(PDF_INK);
   doc.text('GARAŻ 1',sx(layout.firstX),bottom+7,{align:'center'});doc.text(config.assembly?.middleType === 'recess' ? 'WNĘKA' : 'WIATA',sx(layout.middleX),bottom+7,{align:'center'});doc.text('GARAŻ 2',sx(layout.secondX),bottom+7,{align:'center'});
   doc.text('Wspólna szerokość dachu: '+layout.width+' cm',x,bottom+17);
-  doc.text('Wysokość okapu: '+layout.height+' cm / przyrost wysokości dachu: 40 cm',x,bottom+24);
+  const datum = sy(layout.height);
+  doc.setLineWidth(0.2);doc.setDrawColor(PDF_MUTED);
+  doc.line(x-5,datum,x-5,bottom);doc.line(x-7,datum,x-3,datum);doc.line(x-7,bottom,x-3,bottom);
+  doc.text('H min '+layout.height+' cm',x-8,(datum+bottom)/2,{angle:90,align:'center'});
+  doc.setLineDashPattern([1,1],0);doc.line(x,datum,x+layout.width*scale,datum);doc.setLineDashPattern([],0);
+  doc.line(x,bottom+12,x+layout.width*scale,bottom+12);doc.line(x,bottom+10,x,bottom+14);doc.line(x+layout.width*scale,bottom+10,x+layout.width*scale,bottom+14);
+  doc.setFontSize(7.5);doc.text(doc.splitTextToSize(PDF_ROOF_HEIGHT_NOTICE,maxWidth),x,bottom+25);
 }
 
 export async function generateOfferPdf(input: OfferPdfInput) {
@@ -584,7 +550,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     doc.text(`Dach ${roofNames[config.roofType] || config.roofType}\nŚciany: ${config.buildingMaterial === 'pir' ? materialLabel(config) : profileLabel(config.wallProfile)} / ${color(config.wallColor)}`, 24, heroY + 22, { maxWidth: 158, lineHeightFactor: 1.45 });
   }
   const metricY = heroY + heroHeight + 7;
-  const metrics = [['SZEROKOŚĆ UKŁADU', getAssemblyLayout(config).width], ['DŁUGOŚĆ', getAssemblyLayout(config).length], ['WYSOKOŚĆ ŚCIAN', getAssemblyLayout(config).height]] as const;
+  const metrics = [['SZEROKOŚĆ UKŁADU', getAssemblyLayout(config).width], ['DŁUGOŚĆ', getAssemblyLayout(config).length], ['WYSOKOŚĆ NIŻSZEJ ŚCIANY', getAssemblyLayout(config).height]] as const;
   metrics.forEach(([label, value], index) => {
     const x = 16 + index * 61;
     drawPdfCard(doc, x, metricY, 56, 24);
@@ -595,7 +561,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   });
   if (metricY + 31 < PDF_BOTTOM) {
     layout.font(7, false, PDF_MUTED);
-    doc.text('Szczegółowa specyfikacja, rysunki i model AR na kolejnych stronach.', 16, metricY + 31);
+    doc.text(doc.splitTextToSize(PDF_ROOF_HEIGHT_NOTICE,178), 16, metricY + 31);
   }
 
   const assembly = getAssemblyLayout(config);
@@ -624,8 +590,8 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     doc.text('PRZÓD / WJAZD',105,82+(assembly.length+assembly.frontProjection)*scale+10,{align:'center'});
     if (sharedRoof) {doc.setDrawColor(PDF_INK);doc.setLineDashPattern([3,1],0);doc.rect(origin,82,assembly.width*scale,(assembly.length+assembly.frontProjection)*scale);doc.setLineDashPattern([],0);}
     layout.table(['ELEMENT','WYMIARY'],[
-      ['Garaż 1',assembly.first.width+' × '+assembly.first.length+' × '+assembly.first.height+' cm'],
-      ['Garaż 2',assembly.second.width+' × '+assembly.second.length+' × '+assembly.second.height+' cm'],
+      ['Garaż 1 (szer. x dł. x H min)',assembly.first.width+' × '+assembly.first.length+' × '+assembly.first.height+' cm'],
+      ['Garaż 2 (szer. x dł. x H min)',assembly.second.width+' × '+assembly.second.length+' × '+assembly.second.height+' cm'],
       [config.assembly?.middleType === 'recess' ? 'Wnęka środkowa (pełna ściana tylna)' : 'Wiata środkowa',assembly.gap+' × '+assembly.middleLength+' cm / dach: '+(roofNames[assembly.first.roofType] || assembly.first.roofType)+''],
       ['Wypusty PIR','Garaż 1: '+getFrontCanopy(assembly.first)+' cm / Garaż 2: '+getFrontCanopy(assembly.second)+' cm'],
     ],[55,123],218,'Układ - ciąg dalszy');
@@ -652,7 +618,8 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     return `${item.side === 'left' ? 'Lewa' : 'Prawa'}: ${item.width} cm / słupy: ${color(item.postColor)}\nZabudowa: ${walls || 'bez zabudowy'}`;
   }).join('\n');
   const details = [
-    ['Wymiary garażu', `${config.width} x ${config.length} x ${config.height} cm (szer. x dł. x wys. ścian)`],
+    ['Wymiary garażu', `${config.width} x ${config.length} x ${config.height} cm (szer. x dł. x wysokość niższej ściany)`],
+    ['Wysokość szczytu / wyższej ściany', 'Do ustalenia po konsultacji z projektantem. Dach w podglądzie jest orientacyjny.'],
     ['Materiał ścian i dachu', materialLabel(config)],
     ['Profil wzmocniony 60×40',config.buildingMaterial === 'pir' ? 'W cenie PIR' : 'Według wybranych opcji'],
     ['Wypust przed garażem', getFrontCanopy(config) ? `${getFrontCanopy(config)} cm / w cenie PIR / ściany boczne: ${config.frontCanopyWalls !== false ? 'tak' : 'nie'}` : 'Nie'],
@@ -699,21 +666,22 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   doc.text('PRZÓD GARAŻU', 105, 89 + config.length * planScale + 17, { align: 'center' });
   drawTechnicalLegend(doc, 202);
   layout.font(10, true);
-  doc.text(`Wysokość ścian: ${config.height} cm`, 16, 240);
+  doc.text(`Wysokość niższej ściany do okapu (H min): ${config.height} cm`, 16, 240);
   layout.font(9, false, PDF_MUTED);
   doc.text(carportWidth > 0 ? `Łączna szerokość garażu z wiatą: ${config.width + carportWidth} cm.` : `Powierzchnia garażu: ${(config.width * config.length / 10000).toLocaleString('pl-PL')} m².`, 16, 250);
   layout.font(7.5, false, PDF_MUTED);
-  doc.text('Rysunki poglądowe. Wymiary produkcyjne wymagają zatwierdzenia technicznego.', 16, 269);
+  doc.text(doc.splitTextToSize(PDF_ROOF_HEIGHT_NOTICE,178), 16, 264);
 
   layout.page('Cztery elewacje' + unitLabel);
   layout.font(9, false, PDF_MUTED);
   doc.text('Położenie bram, drzwi, okien i świetlików dla każdej ściany.', 16, 55);
-  [[16, 65, 85, 87], [109, 65, 85, 87], [16, 158, 85, 84], [109, 158, 85, 84]].forEach(([x, y, w, h]) => drawPdfCard(doc, x, y, w, h));
+  [[16, 65, 85, 80], [109, 65, 85, 80], [16, 151, 85, 76], [109, 151, 85, 76]].forEach(([x, y, w, h]) => drawPdfCard(doc, x, y, w, h));
   drawElevationPlan(doc, config, 'front', 'Elewacja frontowa', 27, 93, 66, 38,sharedRoof,unitIndex===0 ? assembly.firstX : assembly.secondX);
   drawElevationPlan(doc, config, 'right', 'Elewacja prawa', 120, 93, 66, 38,sharedRoof,unitIndex===0 ? assembly.firstX : assembly.secondX);
-  drawElevationPlan(doc, config, 'back', 'Elewacja tylna', 27, 187, 66, 38,sharedRoof,unitIndex===0 ? assembly.firstX : assembly.secondX);
-  drawElevationPlan(doc, config, 'left', 'Elewacja lewa', 120, 187, 66, 38,sharedRoof,unitIndex===0 ? assembly.firstX : assembly.secondX);
-  drawTechnicalLegend(doc, 244, true);
+  drawElevationPlan(doc, config, 'back', 'Elewacja tylna', 27, 180, 66, 38,sharedRoof,unitIndex===0 ? assembly.firstX : assembly.secondX);
+  drawElevationPlan(doc, config, 'left', 'Elewacja lewa', 120, 180, 66, 38,sharedRoof,unitIndex===0 ? assembly.firstX : assembly.secondX);
+  drawTechnicalLegend(doc, 232, true);
+  layout.font(6.8,false,PDF_MUTED);doc.text(doc.splitTextToSize(PDF_ROOF_HEIGHT_NOTICE,178),16,267);
 
   if (getFrontCanopy(config)) {
     layout.page('Wypust dachu PIR' + unitLabel);
@@ -806,7 +774,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
       : 'Cena ma charakter orientacyjny i wymaga potwierdzenia przez sprzedawcę.',
     'Kolory na ekranie i wydruku mogą różnić się od rzeczywistych. Odcień należy potwierdzić na próbniku.',
     'Zakres dostawy, montażu i przygotowania podłoża określa zatwierdzona umowa lub zamówienie.',
-    'Rysunki mają charakter poglądowy i nie zastępują dokumentacji wykonawczej.',
+    'Rysunki mają charakter poglądowy. Wysokość szczytu lub wyższej ściany ustalimy po konsultacji z projektantem.',
   ];
   let termsY = notesY + 21;
   terms.forEach((term, index) => {

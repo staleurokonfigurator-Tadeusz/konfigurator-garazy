@@ -211,7 +211,7 @@ test('PDF diagrams draw separate unequal carports and keep every roof orientatio
   const pdfAst=ts.createSourceFile('offerPdf.ts',pdfSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
   const names=['getCarportWidthCm','getPdfCarports','drawDimensionPlan','drawElevationPlan'];
   const funcs=pdfAst.statements.filter(node=>ts.isFunctionDeclaration(node)&&names.includes(node.name?.text)).map(node=>node.getText(pdfAst)).join('\n');
-  const drawings=new Function('getCarportLayout','getCarportSides','getCarportSettings','getFrontCanopy',compile("const PDF_FONT='helvetica', PDF_INK='#333333', PDF_MUTED='#64748b', faceNames={front:'front',back:'back',left:'left',right:'right'};"+funcs+'; return {drawDimensionPlan,drawElevationPlan};'))(extras.getCarportLayout,extras.getCarportSides,extras.getCarportSettings,assembly.getFrontCanopy);
+  const drawings=new Function('roofDimensions','getCarportLayout','getCarportSides','getCarportSettings','getFrontCanopy',compile("const {previewRoofHeight,elevationPosition,planOpeningRange,PREVIEW_ROOF_RISE_CM}=roofDimensions;const PDF_FONT='helvetica', PDF_INK='#333333', PDF_MUTED='#64748b', faceNames={front:'front',back:'back',left:'left',right:'right'};"+funcs+'; return {drawDimensionPlan,drawElevationPlan};'))(load('src/lib/roofDimensions.ts'),extras.getCarportLayout,extras.getCarportSides,extras.getCarportSettings,assembly.getFrontCanopy);
   const {jsPDF}=require('jspdf');
   const config={...base,width:600,hasCarport:true,carportSide:'both',carportLeft:{width:150},carportRight:{width:350}};
   const doc=new jsPDF();const rectangles=[];const original=doc.rect.bind(doc);
@@ -223,8 +223,15 @@ test('PDF diagrams draw separate unequal carports and keep every roof orientatio
   assert.ok(Math.abs(bodies[0][0]-(10+150*scale))<1e-6);
   assert.ok(Math.abs(bodies[1][2]-150*scale)<1e-6);
   assert.ok(Math.abs(bodies[2][2]-350*scale)<1e-6);
+  const labels=[],dimensions=[];const drawText=doc.text.bind(doc),drawLine=doc.line.bind(doc);
+  doc.text=(value,...args)=>{labels.push(value);return drawText(value,...args);};
+  doc.line=(...args)=>{dimensions.push(args);return drawLine(...args);};
   for(const roofType of ['dual-slope','dual-slope-front-back','slope-front','slope-back','slope-left','slope-right']) for(const wall of ['front','back','left','right']) {
+    labels.length=0;dimensions.length=0;
     drawings.drawElevationPlan(doc,{...config,roofType},wall,wall,20,130,160,42);
+    assert.ok(labels.includes('H min 210 cm'));
+    assert.ok(labels.includes('Szczyt / H max: po konsultacji'));
+    assert.ok(dimensions.some(([x1,y1,x2,y2])=>x1===15 && x2===15 && y1===130 && y2>130),'height dimension must end at the lower eaves datum');
   }
   assert.ok(doc.output('arraybuffer').byteLength>1000);
 });
@@ -418,4 +425,41 @@ test('single-garage and PDF overview views retain their existing scene framing',
   }
   assert.equal(camera.getGarageCameraView(config,'left',1.6,1,null,true).target[0],-7.5);
   assert.equal(camera.getGarageCameraView(config,'right',1.6,0,null,true).target[0],7.5);
+});
+
+const roofDimensions=load('src/lib/roofDimensions.ts');
+test('height is the lowest eaves datum for every roof orientation; opposite high faces are drawn above it', () => {
+  const h=211,config={...base,width:600,length:800,height:h};
+  for(const roofType of ['dual-slope','dual-slope-front-back','slope-front','slope-back','slope-left','slope-right']) {
+    const cfg={...config,roofType};
+    const heights=[[-300,-400],[-300,400],[300,-400],[300,400],[0,0]].map(([x,z])=>roofDimensions.previewRoofHeight(cfg,x,z));
+    assert.equal(Math.min(...heights),h);
+    assert.equal(Math.max(...heights),h+40);
+  }
+  assert.equal(roofDimensions.previewRoofHeight({...config,roofType:'slope-back'},0,400),251);
+  assert.equal(roofDimensions.previewRoofHeight({...config,roofType:'slope-back'},0,-400),211);
+  assert.equal(roofDimensions.previewRoofHeight({...config,roofType:'slope-left'},300,0),251);
+  assert.equal(roofDimensions.previewRoofHeight({...config,roofType:'slope-left'},-300,0),211);
+});
+test('plan opening coordinates match the exterior face orientation on back and right walls', () => {
+  assert.deepEqual(roofDimensions.planOpeningRange('front',600,100,80),[360,440]);
+  assert.deepEqual(roofDimensions.planOpeningRange('back',600,100,80),[160,240]);
+  assert.deepEqual(roofDimensions.planOpeningRange('left',800,150,100),[500,600]);
+  assert.deepEqual(roofDimensions.planOpeningRange('right',800,150,100),[200,300]);
+  assert.deepEqual(roofDimensions.planOpeningRange('right',600,0,700),[0,600]);
+  for(const wall of ['front','back','left','right']) {
+    const config={...base,width:600,length:800},span=wall==='front'||wall==='back'?600:800;
+    const [x,z]=roofDimensions.elevationPosition(config,wall,span/2+100);
+    if(wall==='front')assert.deepEqual([x,z],[100,400]);
+    if(wall==='back')assert.deepEqual([x,z],[-100,-400]);
+    if(wall==='left')assert.deepEqual([x,z],[-300,100]);
+    if(wall==='right')assert.deepEqual([x,z],[300,-100]);
+  }
+});
+test('shared roof drawing uses the common lower height and correctly offset asymmetric units', () => {
+  const config={...base,width:301,height:211,roofType:'dual-slope',assembly:{second:{...base,width:401,height:221},gapWidth:301}};
+  const layout=assembly.getAssemblyLayout(config),profile=assembly.getSharedRoofProfile(config);
+  for(const [unit,offset] of [[layout.first,layout.firstX],[layout.second,layout.secondX]])for(const local of [-unit.width/2,0,unit.width/2]) {
+    assert.equal(roofDimensions.previewRoofHeight(unit,local,0,profile,offset),assembly.sharedRoofHeightAt(profile,local+offset));
+  }
 });

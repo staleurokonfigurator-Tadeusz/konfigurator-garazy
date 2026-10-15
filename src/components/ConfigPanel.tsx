@@ -12,6 +12,7 @@ import { getCarportSides, getCarportSettings, withCarportSettings, getAnchoringP
 import { calculateGaragePrice } from '@/lib/garagePricing';
 import { getFrontCanopy, hasSharedAssemblyRoof } from '@/lib/garageAssembly';
 import RoofTypeIcon from './RoofTypeIcon';
+import { GARAGE_HEIGHT_LABEL, ROOF_HEIGHT_NOTICE } from '@/lib/roofDimensions';
 import { getPirPricePerM2, isPirGarage, MAX_GARAGE_WIDTH_CM, MAX_GARAGE_LENGTH_CM } from '@/lib/garageMaterial';
 
 const OfferDialog = dynamic(() => import('@/components/OfferDialog'), { ssr: false });
@@ -311,14 +312,16 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
 
       <Section title="Wymiary Główne" icon={<Maximize size={20} />}>
         <div className="space-y-6">
-        {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: MAX_GARAGE_WIDTH_CM, step: 1 }, { label: 'Długość', key: 'length' as const, min: 300, max: MAX_GARAGE_LENGTH_CM, step: 1 }, { label: 'Wysokość', key: 'height' as const, min: 200, max: 350, step: 1 }].map(dim => (
+        {[{ label: 'Szerokość', key: 'width' as const, min: 200, max: MAX_GARAGE_WIDTH_CM, step: 1 }, { label: 'Długość', key: 'length' as const, min: 300, max: MAX_GARAGE_LENGTH_CM, step: 1 }, { label: GARAGE_HEIGHT_LABEL, key: 'height' as const, min: 200, max: 350, step: 1 }].map(dim => (
             <div key={dim.key}>
-              <div className="flex justify-between mb-2 text-sm font-semibold text-zinc-700"><label>{dim.label}</label><EditableDimension label={dim.label} value={config[dim.key]} min={dim.min} max={dim.max} step={dim.step} readOnly={isReadOnly} onChange={value => updateConfig(dim.key, value)} /></div>
+              <div className="flex items-center justify-between gap-3 mb-2 text-sm font-semibold text-zinc-700"><label>{dim.label}</label><EditableDimension label={dim.label} value={config[dim.key]} min={dim.min} max={dim.max} step={dim.step} readOnly={isReadOnly} onChange={value => updateConfig(dim.key, value)} /></div>
               {!isReadOnly && <input type="range" min={dim.min} max={dim.max} step={dim.step} value={config[dim.key]} onChange={(e) => updateConfig(dim.key, Number(e.target.value))} className="w-full" style={{accentColor: 'var(--theme)'}} />}
             </div>
           ))}
         </div>
       </Section>
+
+      <p className="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-relaxed text-zinc-700">{ROOF_HEIGHT_NOTICE}</p>
 
       {isPir && !secondaryRoof && <Section title="Wypust przed garażem" icon={<Home size={20} />}>
         <p className="mb-4 text-sm leading-relaxed text-zinc-600">Wysuń dach nad wjazdem. Ściana frontowa i brama pozostają na swoim miejscu. Wypust wraz ze ścianami bocznymi jest w cenie PIR.</p>
