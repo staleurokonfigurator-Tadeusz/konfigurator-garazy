@@ -11,9 +11,9 @@ export interface TrashPanelPatternSettings {
 // Proporcje odpowiadają typowym poziomym lamelom: prześwit jest wyraźny,
 // ale nie dominuje nad panelem. Te same dane sterują miniaturą, modelem 3D i PDF-em.
 export const TRASH_PANEL_PATTERNS: TrashPanelPatternSettings[] = [
-  { id: 'narrow', label: 'Wąskie lamele', description: 'Panele 14 cm · prześwit 4 cm', panelHeightsCm: [14], gapCm: 4 },
-  { id: 'wide', label: 'Szerokie lamele', description: 'Panele 22 cm · prześwit 5 cm', panelHeightsCm: [22], gapCm: 5 },
-  { id: 'mixed', label: 'Układ mieszany', description: 'Panele 22/14/14 cm · prześwit 4 cm', panelHeightsCm: [22, 14, 14], gapCm: 4 },
+  { id: 'narrow', label: 'Wąskie lamele', description: 'Panele 14 cm · prześwit 3 cm', panelHeightsCm: [14], gapCm: 3 },
+  { id: 'wide', label: 'Szerokie lamele', description: 'Panele 22 cm · prześwit 3 cm', panelHeightsCm: [22], gapCm: 3 },
+  { id: 'mixed', label: 'Układ mieszany', description: 'Panele 22/14/14 cm · prześwit 3 cm', panelHeightsCm: [22, 14, 14], gapCm: 3 },
 ];
 
 export interface TrashPanelBand { index: number; bottomCm: number; heightCm: number }

@@ -1,68 +1,127 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { GarageConfig, WallFace } from '@/types';
 import * as THREE from 'three';
-import { ContactShadows, useTexture } from '@react-three/drei';
-import LightweightEnvironment from './LightweightEnvironment';
-import { Geometry, Base, Subtraction } from '@react-three/csg';
+import { useTexture } from '@react-three/drei';
 import { getTrashPanelBands, getTrashPanelColor, getTrashWallPanelHeightCm } from '@/lib/trashPanels';
 
 interface TrashModelProps {
   config: GarageConfig;
   colors?: ColorOption[];
+  lowPower?: boolean;
 }
 
-interface ColorOption { id: string; type?: string; hex?: string; texture?: string }
+interface ColorOption { id: string; label?: string; type?: string; hex?: string; texture?: string }
 
-function resolveColor(colorId: string | undefined, colors: ColorOption[] = []): { hex: string; isWood: boolean; textureUrl: string } {
-  if (!colorId) return { hex: '#d4d4d4', isWood: false, textureUrl: '' };
-  if (colorId.startsWith('#')) return { hex: colorId, isWood: false, textureUrl: '' };
-  const found = colors.find(color => color.id === colorId);
-  if (!found) return { hex: '#d4d4d4', isWood: false, textureUrl: '' };
+const GOLDEN_OAK_TEXTURE = '/textures/zloty-dab-light-v3.webp';
+const DARK_WALNUT_TEXTURE = '/textures/ciemny-orzech-light-v3.webp';
+const WOOD_NORMAL_TEXTURE = '/textures/drewno-normal-light-v3.webp';
+const SHEET_TEXTURE = '/textures/trapez.webp';
+
+function resolveColor(colorId: string | undefined, colors: ColorOption[] = []): { hex: string; isWood: boolean; walnut: boolean } {
+  if (!colorId) return { hex: '#d4d4d4', isWood: false, walnut: false };
+  if (colorId.startsWith('#')) return { hex: colorId, isWood: false, walnut: false };
+  const normalizedId = String(colorId).trim().toLowerCase();
+  const found = colors.find(color => String(color.id).trim().toLowerCase() === normalizedId);
+  if (!found) return { hex: '#d4d4d4', isWood: false, walnut: false };
+  const signature = `${normalizedId} ${found.label || ''} ${found.type || ''}`.toLowerCase();
+  const isWood = Boolean(found.texture) || /drewn|wood|d[aą]b|oak|orzech|walnut/.test(signature);
   return {
     hex: found.hex || '#d4d4d4',
-    isWood: String(found.type || '').toLowerCase().includes('drew'),
-    textureUrl: found.texture || '',
+    isWood,
+    walnut: /orzech|walnut/.test(signature),
   };
 }
 
-function TrashSurfaceMaterial({ colorId, colors, attach, metalTexture = false }: { colorId?: string; colors: ColorOption[]; attach?: string; metalTexture?: boolean }) {
-  const resolved = resolveColor(colorId, colors);
-  const [selectedTexture, sheetTexture, woodNormal] = useTexture([
-    resolved.textureUrl || '/textures/trapez.webp',
-    '/textures/trapez.webp',
-    '/textures/drewno-normal.webp',
-  ]);
-  useEffect(() => {
-    [selectedTexture, sheetTexture, woodNormal].forEach(texture => {
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      texture.colorSpace = texture === woodNormal ? THREE.NoColorSpace : THREE.SRGBColorSpace;
-      texture.repeat.set(2, 2);
-      texture.needsUpdate = true;
-    });
-  }, [selectedTexture, sheetTexture, woodNormal]);
-  return <meshStandardMaterial
-    attach={attach}
-    color={resolved.isWood ? '#ffffff' : resolved.hex}
-    map={resolved.isWood ? selectedTexture : metalTexture ? sheetTexture : undefined}
-    normalMap={resolved.isWood ? woodNormal : undefined}
-    normalScale={resolved.isWood ? new THREE.Vector2(1.1, 1.1) : undefined}
-    roughness={resolved.isWood ? 0.72 : 0.56}
-    metalness={resolved.isWood ? 0 : 0.35}
-    envMapIntensity={1.25}
-    side={THREE.DoubleSide}
-    shadowSide={THREE.DoubleSide}
-  />;
-}
-
-export default function TrashModel({ config, colors = [] }: TrashModelProps) {
+export default function TrashModel({ config, colors = [], lowPower = false }: TrashModelProps) {
   const w = config.width / 100;
   const l = config.length / 100;
   const h = config.height / 100;
 
   const t = 0.05;
   const slopeH = 0.4;
+
+  // Tekstury są lokalne, małe i współdzielone przez wszystkie panele. Nie pobieramy
+  // już osobnej tekstury z WordPressa dla każdego elementu modelu.
+  const [oakSource, walnutSource, normalSource, sheetSource] = useTexture([
+    GOLDEN_OAK_TEXTURE,
+    DARK_WALNUT_TEXTURE,
+    WOOD_NORMAL_TEXTURE,
+    SHEET_TEXTURE,
+  ]);
+  const textures = useMemo(() => {
+    const prepare = (source: THREE.Texture, colorSpace: THREE.ColorSpace, repeatX: number, repeatY: number) => {
+      const texture = source.clone();
+      texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
+      texture.colorSpace = colorSpace;
+      texture.repeat.set(repeatX, repeatY);
+      texture.anisotropy = lowPower ? 1 : 2;
+      texture.needsUpdate = true;
+      return texture;
+    };
+    return {
+      oak: prepare(oakSource, THREE.SRGBColorSpace, 1.5, 0.7),
+      walnut: prepare(walnutSource, THREE.SRGBColorSpace, 1.5, 0.7),
+      normal: prepare(normalSource, THREE.NoColorSpace, 1.5, 0.7),
+      sheet: prepare(sheetSource, THREE.SRGBColorSpace, 2, 2),
+    };
+  }, [lowPower, normalSource, oakSource, sheetSource, walnutSource]);
+
+  useEffect(() => () => {
+    Object.values(textures).forEach(texture => texture.dispose());
+  }, [textures]);
+
+  const materials = useMemo(() => {
+    const usedColorIds = new Set<string>();
+    [config.wallColor, config.roofColor, config.gateColor, config.doorColor].forEach(color => {
+      if (color) usedColorIds.add(color);
+    });
+    Object.values(config.trashPanelColors || {}).forEach(wallColors => {
+      (wallColors || []).forEach(color => { if (color) usedColorIds.add(color); });
+    });
+
+    const surface = new Map<string, THREE.MeshStandardMaterial>();
+    const roof = new Map<string, THREE.MeshStandardMaterial>();
+    const create = (colorId: string, useSheetTexture: boolean) => {
+      const resolved = resolveColor(colorId, colors);
+      const woodTexture = resolved.walnut ? textures.walnut : textures.oak;
+      return new THREE.MeshStandardMaterial({
+        color: resolved.isWood ? '#ffffff' : resolved.hex,
+        map: resolved.isWood ? woodTexture : useSheetTexture ? textures.sheet : null,
+        normalMap: resolved.isWood ? textures.normal : null,
+        normalScale: resolved.isWood ? new THREE.Vector2(0.14, 0.14) : undefined,
+        roughness: resolved.isWood ? 0.58 : 0.54,
+        metalness: resolved.isWood ? 0.03 : 0.12,
+        envMapIntensity: 1.05,
+        side: THREE.DoubleSide,
+        shadowSide: THREE.DoubleSide,
+      });
+    };
+    usedColorIds.forEach(colorId => {
+      surface.set(colorId, create(colorId, false));
+      roof.set(colorId, create(colorId, true));
+    });
+    const fallback = create('#d4d4d4', false);
+    const fallbackRoof = create('#d4d4d4', true);
+    return { surface, roof, fallback, fallbackRoof };
+  }, [colors, config.doorColor, config.gateColor, config.roofColor, config.trashPanelColors, config.wallColor, textures]);
+
+  useEffect(() => () => {
+    const unique = new Set<THREE.Material>([
+      ...materials.surface.values(), ...materials.roof.values(), materials.fallback, materials.fallbackRoof,
+    ]);
+    unique.forEach(material => material.dispose());
+  }, [materials]);
+
+  const surfaceMaterial = (colorId?: string) => colorId ? materials.surface.get(colorId) || materials.fallback : materials.fallback;
+  const roofMaterial = (colorId?: string) => colorId ? materials.roof.get(colorId) || materials.fallbackRoof : materials.fallbackRoof;
+  const unitBox = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
+  const frameMaterial = useMemo(() => new THREE.MeshStandardMaterial({ color: '#25282b', roughness: 0.62, metalness: 0.28 }), []);
+  useEffect(() => () => {
+    unitBox.dispose();
+    frameMaterial.dispose();
+  }, [frameMaterial, unitBox]);
 
   const showGutters = config.extraOptions?.includes('gutters') ?? config.gutters;
   const showRoofFlashings = config.extraOptions?.includes('roofFlashings');
@@ -97,7 +156,7 @@ export default function TrashModel({ config, colors = [] }: TrashModelProps) {
         <meshStandardMaterial attach={attachName} color={roofFasciaColor} roughness={0.8} metalness={0.2} visible={!!showRoofFlashings} side={THREE.DoubleSide} shadowSide={THREE.DoubleSide} />
       );
 
-      const renderMainMat = (attachName: string) => <TrashSurfaceMaterial attach={attachName} colorId={config.roofColor} colors={colors} metalTexture />;
+      const renderMainMat = (attachName: string) => <primitive object={roofMaterial(config.roofColor)} attach={attachName} />;
 
       return (
         <group frustumCulled={false}>
@@ -161,7 +220,7 @@ export default function TrashModel({ config, colors = [] }: TrashModelProps) {
           <boxGeometry args={[rW, t, rL]} />
           <meshStandardMaterial attach="material-0" color={roofFasciaColor} roughness={0.8} metalness={0.2} visible={!!showRoofFlashings} side={THREE.DoubleSide} shadowSide={THREE.DoubleSide} />
           <meshStandardMaterial attach="material-1" color={roofFasciaColor} roughness={0.8} metalness={0.2} visible={!!showRoofFlashings} side={THREE.DoubleSide} shadowSide={THREE.DoubleSide} />
-          <TrashSurfaceMaterial attach="material-2" colorId={config.roofColor} colors={colors} metalTexture />
+          <primitive object={roofMaterial(config.roofColor)} attach="material-2" />
           <meshStandardMaterial attach="material-3" color={roofFasciaColor} roughness={0.8} metalness={0.2} visible={!!showRoofFlashings} side={THREE.DoubleSide} shadowSide={THREE.DoubleSide} />
           <meshStandardMaterial attach="material-4" color={roofFasciaColor} roughness={0.8} metalness={0.2} visible={!!showRoofFlashings} side={THREE.DoubleSide} shadowSide={THREE.DoubleSide} />
           <meshStandardMaterial attach="material-5" color={roofFasciaColor} roughness={0.8} metalness={0.2} visible={!!showRoofFlashings} side={THREE.DoubleSide} shadowSide={THREE.DoubleSide} />
@@ -171,7 +230,7 @@ export default function TrashModel({ config, colors = [] }: TrashModelProps) {
     );
   };
 
-  // --- LOGIKA ŚCIAN Z CSG (LAMELKI) ---
+  // Wysokości narożników sterują przycinaniem paneli do połaci dachu.
   let hFL = h, hFR = h, hBL = h, hBR = h;
   if (isDual) { hFL = h; hFR = h; hBL = h; hBR = h; }
   else if (isFront) { hBL = h + slopeH; hBR = h + slopeH; }
@@ -179,89 +238,8 @@ export default function TrashModel({ config, colors = [] }: TrashModelProps) {
   else if (isLeft) { hFR = h + slopeH; hBR = h + slopeH; }
   else if (isRight) { hFL = h + slopeH; hBL = h + slopeH; }
 
-  const createFBShape = (leftH: number, rightH: number, isTri = false) => {
-    const shape = new THREE.Shape();
-    const halfW = w / 2;
-    shape.moveTo(-halfW, 0);
-    shape.lineTo( halfW, 0);
-    shape.lineTo( halfW, rightH);
-    if (isTri) shape.lineTo(0, rightH + slopeH);
-    shape.lineTo(-halfW, leftH);
-    shape.closePath();
-    return shape;
-  };
-
-  const createSideShape = (frontH: number, rearH: number) => {
-    const shape = new THREE.Shape();
-    const sideL = l - 2 * t;
-    shape.moveTo(0, 0);
-    shape.lineTo(sideL, 0);
-    shape.lineTo(sideL, rearH);
-    shape.lineTo(0, frontH);
-    shape.closePath();
-    return shape;
-  };
-
-  const wallExtrude = { depth: t, bevelEnabled: false };
-  const frontShape = createFBShape(hFL, hFR, isDual);
-  const backShape = createFBShape(hBR, hBL, isDual);
-  const leftSideShape  = createSideShape(hFL, hBL);
-  const rightSideShape = createSideShape(hFR, hBR);
-
-  const getElementSubtractions = (wall: WallFace, isSide = false, isLeftWall = false) => {
-    return (config.elements || []).filter(e => e.wall === wall).map((el, i) => {
-      let xShape = (el.x || 0) * 0.01;
-      if (isSide) xShape = isLeftWall ? ((l - 2*t) / 2 - (el.x || 0) * 0.01) : ((l - 2*t) / 2 + (el.x || 0) * 0.01);
-      return (
-        <Subtraction key={`el-${i}`} position={[xShape, (el.y || 0) * 0.01 + ((el.height || 0) * 0.01) / 2, t / 2]}>
-          <boxGeometry args={[(el.width || 0) * 0.01, (el.height || 0) * 0.01, t * 4]} />
-        </Subtraction>
-      );
-    });
-  };
-
-  const getLouversSubtractions = (wallW: number, wallMaxH: number, isSide = false) => {
-    const subs: React.ReactNode[] = [];
-    const bands = getTrashPanelBands(wallMaxH * 100, config.trashPanelPattern || 'narrow');
-    const posX = isSide ? wallW / 2 : 0;
-    bands.slice(0, -1).forEach((band, index) => {
-      const gapStartCm = band.bottomCm + band.heightCm;
-      const gapHeightCm = Math.max(0, bands[index + 1].bottomCm - gapStartCm);
-      if (gapHeightCm <= 0) return;
-      subs.push(
-        <Subtraction key={`gap-${index}`} position={[posX, (gapStartCm + gapHeightCm / 2) / 100, t / 2]}>
-          <boxGeometry args={[20, gapHeightCm / 100, t * 4]} />
-        </Subtraction>
-      );
-    });
-    return subs;
-  };
-
-  const renderAzurowaWall = (
-    wallType: WallFace,
-    shape: THREE.Shape,
-    pos: [number, number, number],
-    rotY: number,
-    isSide = false,
-    isLeftWall = false,
-    wallW: number
-  ) => {
-    return (
-      <mesh position={pos} rotation={[0, rotY, 0]} castShadow receiveShadow>
-        <Geometry computeVertexNormals>
-          <Base>
-            <extrudeGeometry args={[shape, wallExtrude]} />
-          </Base>
-          {getElementSubtractions(wallType, isSide, isLeftWall)}
-          {getLouversSubtractions(wallW, h + slopeH + 0.5, isSide)}
-        </Geometry>
-        <TrashSurfaceMaterial colorId={config.wallColor} colors={colors} />
-      </mesh>
-    );
-  };
-
-  // Widoczne panele są osobnymi elementami. Dzięki temu każdy z nich może mieć
-  // własny kolor, a otwory na bramy i drzwi nadal pozostają rzeczywistymi otworami.
+  // Panele są jedyną geometrią ścian. Zastępuje to kosztowne operacje CSG,
+  // zachowując prawdziwe prześwity oraz otwory na bramy i drzwi.
   const renderPanelOverlay = (
     wall: WallFace,
     pos: [number, number, number],
@@ -319,11 +297,24 @@ export default function TrashModel({ config, colors = [] }: TrashModelProps) {
             return next;
           });
         }
-        return intervals.filter(([from, to]) => to - from > 0.015).map(([from, to], segmentIndex) => <mesh key={`${wall}-${band.index}-${segmentIndex}`} position={[(from + to) / 2, bandBottom + (band.heightCm / 200), t + 0.004]} castShadow receiveShadow>
-          <boxGeometry args={[to - from, band.heightCm / 100, 0.018]} />
-          <TrashSurfaceMaterial colorId={getTrashPanelColor(config, wall, band.index)} colors={colors} />
+        return intervals.filter(([from, to]) => to - from > 0.015).map(([from, to], segmentIndex) => <mesh key={`${wall}-${band.index}-${segmentIndex}`} position={[(from + to) / 2, bandBottom + (band.heightCm / 200), t + 0.004]} scale={[to - from, band.heightCm / 100, 0.018]} castShadow={!lowPower} receiveShadow>
+          <primitive object={unitBox} attach="geometry" />
+          <primitive object={surfaceMaterial(getTrashPanelColor(config, wall, band.index))} attach="material" />
         </mesh>);
       })}
+    </group>;
+  };
+
+  const renderFrame = () => {
+    const posts: Array<[number, number, number]> = [
+      [-w / 2, l / 2, hFL], [w / 2, l / 2, hFR],
+      [-w / 2, -l / 2, hBL], [w / 2, -l / 2, hBR],
+    ];
+    return <group>
+      {posts.map(([x, z, height], index) => <mesh key={`post-${index}`} position={[x, height / 2, z]} scale={[0.085, height, 0.085]} castShadow={!lowPower} receiveShadow>
+        <primitive object={unitBox} attach="geometry" />
+        <primitive object={frameMaterial} attach="material" />
+      </mesh>)}
     </group>;
   };
 
@@ -352,7 +343,7 @@ export default function TrashModel({ config, colors = [] }: TrashModelProps) {
            </mesh>
            <mesh position={[0, 0, 0.035]} castShadow receiveShadow>
               <boxGeometry args={[elW, elH, 0.035]} />
-              <TrashSurfaceMaterial colorId={el.type === 'gate' ? config.gateColor : config.doorColor} colors={colors} metalTexture />
+              <primitive object={surfaceMaterial(el.type === 'gate' ? config.gateColor : config.doorColor)} attach="material" />
            </mesh>
            {el.type === 'gate' && el.gateType === 'swing' && <mesh position={[0, 0, 0.056]}><boxGeometry args={[0.018, elH, 0.018]} /><meshStandardMaterial color="#252525" roughness={0.75} /></mesh>}
            <mesh position={[el.hingeSide === 'right' ? -elW * 0.32 : elW * 0.32, 0, 0.06]}><sphereGeometry args={[0.025, 12, 12]} /><meshStandardMaterial color="#161616" metalness={0.6} roughness={0.35} /></mesh>
@@ -362,35 +353,15 @@ export default function TrashModel({ config, colors = [] }: TrashModelProps) {
   }
 
   return (
-    <>
-      <LightweightEnvironment />
-      <mesh scale={100}>
-        <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color="#d1d5db" side={THREE.BackSide} />
-      </mesh>
+    <group name="trashModelGroup">
+      {renderPanelOverlay('front', [0, 0, l / 2 - t], 0, false, false, w)}
+      {renderPanelOverlay('back', [0, 0, -l / 2 + t], Math.PI, false, false, w)}
+      {renderPanelOverlay('left', [-w / 2, 0, l / 2 - t], Math.PI / 2, true, true, l - 2 * t)}
+      {renderPanelOverlay('right', [w / 2 - t, 0, l / 2 - t], Math.PI / 2, true, false, l - 2 * t)}
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]} receiveShadow>
-        <planeGeometry args={[150, 150]} />
-        <meshStandardMaterial color="#4a4a4a" roughness={0.9} metalness={0.1} />
-      </mesh>
-      <gridHelper args={[150, 150, '#3a3a3a', '#555555']} position={[0, -0.02, 0]} />
-
-      <ContactShadows resolution={256} frames={1} scale={25} blur={2.5} opacity={0.7} far={10} color="#000000" position={[0, 0, 0]} />
-
-      <group>
-        {renderAzurowaWall('front', frontShape, [0, 0, l / 2 - t], 0, false, false, w)}
-        {renderAzurowaWall('back', backShape, [0, 0, -l / 2 + t], Math.PI, false, false, w)}
-        {renderAzurowaWall('left', leftSideShape, [-w / 2, 0, l / 2 - t], Math.PI / 2, true, true, l - 2 * t)}
-        {renderAzurowaWall('right', rightSideShape, [w / 2 - t, 0, l / 2 - t], Math.PI / 2, true, false, l - 2 * t)}
-
-        {renderPanelOverlay('front', [0, 0, l / 2 - t], 0, false, false, w)}
-        {renderPanelOverlay('back', [0, 0, -l / 2 + t], Math.PI, false, false, w)}
-        {renderPanelOverlay('left', [-w / 2, 0, l / 2 - t], Math.PI / 2, true, true, l - 2 * t)}
-        {renderPanelOverlay('right', [w / 2 - t, 0, l / 2 - t], Math.PI / 2, true, false, l - 2 * t)}
-
-        {renderElements()}
-        {renderRoof()}
-      </group>
-    </>
+      {renderFrame()}
+      {renderElements()}
+      {renderRoof()}
+    </group>
   );
 }

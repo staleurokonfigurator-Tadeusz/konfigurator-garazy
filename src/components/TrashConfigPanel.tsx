@@ -58,10 +58,11 @@ export default function TrashConfigPanel({ config, setConfig, appData, selectedW
   const [selectedPanels, setSelectedPanels] = useState<number[]>([]);
   const colors: ColorOption[] = appData.colors || [];
   const normalizedType = (value: unknown) => String(value || '').trim().toLowerCase();
+  const isWoodColor = (color: ColorOption) => normalizedType(color.type).includes('drew') || Boolean(color.texture);
   const colorGroups = [
-    { title: 'Drewnopodobne', items: colors.filter(color => normalizedType(color.type).includes('drew')) },
-    { title: 'Matowe', items: colors.filter(color => normalizedType(color.type).includes('mat')) },
-    { title: 'Połysk i gładkie', items: colors.filter(color => !normalizedType(color.type).includes('drew') && !normalizedType(color.type).includes('mat')) },
+    { title: 'Drewnopodobne', items: colors.filter(isWoodColor) },
+    { title: 'Matowe', items: colors.filter(color => !isWoodColor(color) && normalizedType(color.type).includes('mat')) },
+    { title: 'Połysk i gładkie', items: colors.filter(color => !isWoodColor(color) && !normalizedType(color.type).includes('mat')) },
   ].filter(group => group.items.length);
   const getColor = (id: string) => colors.find(color => color.id === id) || { id, hex: id.startsWith('#') ? id : '#d4d4d4', label: id || 'Wybierz', texture: '' };
   const pattern = config.trashPanelPattern || 'narrow';

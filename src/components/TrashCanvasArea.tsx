@@ -1,9 +1,10 @@
 "use client";
 
 import { Canvas, useThree } from '@react-three/fiber';
-import { CameraControls, Html, Line, Edges } from '@react-three/drei';
+import { CameraControls, ContactShadows, Html, Line, Edges, useTexture } from '@react-three/drei';
 import { GarageConfig, WallFace } from '@/types';
 import TrashModel from './TrashModel';
+import LightweightEnvironment from './LightweightEnvironment';
 import { Suspense, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { getThreePerformanceProfile } from '@/lib/threePerformance';
@@ -12,13 +13,13 @@ interface CanvasAreaProps {
   config: GarageConfig;
   selectedWall: WallFace;
   activeDimId?: string | null;
-  colors?: any[];
+  colors?: Array<{ id: string; label?: string; type?: string; hex?: string; texture?: string }>;
   isGeneratingAR?: boolean;
   onExportAR?: (url: string) => void;
 }
 
 function CameraRig({ selectedWall, config, activeDimId }: { selectedWall: WallFace; config: GarageConfig, activeDimId?: string | null }) {
-  const controlsRef = useRef<any>(null);
+  const controlsRef = useRef<CameraControls>(null);
 
   useEffect(() => {
     if (!controlsRef.current) return;
@@ -93,6 +94,48 @@ function DimensionsOverlay({ config, activeId }: { config: GarageConfig, activeI
   );
 }
 
+function TrashSceneGround({ config, lowPower }: { config: GarageConfig; lowPower: boolean }) {
+  const grassSource = useTexture('/textures/trawa-light-v3.webp');
+  const drivewaySource = useTexture('/textures/podjazd-light-v3.webp');
+  const groundSize = Math.max(44, Math.max(config.width, config.length) / 100 + 32);
+  const drivewayWidth = Math.max(3.2, Math.min(6, config.width / 100 + 0.7));
+  const drivewayLength = 8;
+  const grass = useMemo(() => {
+    const texture = grassSource.clone();
+    texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
+    texture.repeat.set(groundSize * 0.3, groundSize * 0.3);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = lowPower ? 1 : 2;
+    texture.needsUpdate = true;
+    return texture;
+  }, [grassSource, groundSize, lowPower]);
+  const driveway = useMemo(() => {
+    const texture = drivewaySource.clone();
+    texture.wrapS = texture.wrapT = THREE.MirroredRepeatWrapping;
+    texture.repeat.set(drivewayWidth / 1.35, drivewayLength / 1.35);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = lowPower ? 1 : 2;
+    texture.needsUpdate = true;
+    return texture;
+  }, [drivewaySource, drivewayWidth, lowPower]);
+
+  useEffect(() => () => {
+    grass.dispose();
+    driveway.dispose();
+  }, [driveway, grass]);
+
+  return <group>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.035, 0]} receiveShadow={!lowPower}>
+      <planeGeometry args={[groundSize, groundSize]} />
+      <meshStandardMaterial map={grass} color="#c2ccb5" roughness={0.98} metalness={0} />
+    </mesh>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.018, config.length / 200 + drivewayLength / 2]} receiveShadow={!lowPower}>
+      <planeGeometry args={[drivewayWidth, drivewayLength]} />
+      <meshStandardMaterial map={driveway} color="#ece8e1" roughness={0.94} metalness={0} />
+    </mesh>
+  </group>;
+}
+
 function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExport: (url: string) => void }) {
   const { scene } = useThree();
 
@@ -104,10 +147,12 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
         const { GLTFExporter } = await import('three/examples/jsm/exporters/GLTFExporter.js');
         const exporter = new GLTFExporter();
         
+        const trashGroup = scene.getObjectByName('trashModelGroup');
+        if (!trashGroup) throw new Error('Główna grupa wiaty nie została znaleziona.');
         exporter.parse(
-          scene,
+          trashGroup,
           (gltf) => {
-            const blob = new Blob([gltf as ArrayBuffer], { type: 'application/octet-stream' });
+            const blob = new Blob([gltf as ArrayBuffer], { type: 'model/gltf-binary' });
             const url = URL.createObjectURL(blob);
             onExport(url);
           },
@@ -123,7 +168,8 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
       }
     };
 
-    setTimeout(performExport, 500);
+    const timer = window.setTimeout(performExport, 500);
+    return () => window.clearTimeout(timer);
   }, [isGenerating, scene, onExport]);
 
   return null;
@@ -131,17 +177,23 @@ function ARExporter({ isGenerating, onExport }: { isGenerating: boolean; onExpor
 
 export default function TrashCanvasArea({ config, selectedWall, activeDimId, colors = [], isGeneratingAR = false, onExportAR }: CanvasAreaProps) {
   const renderProfile = useMemo(() => getThreePerformanceProfile(), []);
+  const shadowExtent = Math.max(8, config.width / 100, config.length / 100) * 0.9;
   return (
-    <Canvas frameloop="demand" dpr={renderProfile.dpr} performance={{ min: renderProfile.lowPower ? 0.35 : 0.5 }} gl={{ preserveDrawingBuffer: true, powerPreference: renderProfile.lowPower ? 'default' : 'high-performance', antialias: renderProfile.antialias }} onCreated={({ gl }) => { gl.outputColorSpace = THREE.SRGBColorSpace; gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1; }} shadows={{ type: THREE.PCFShadowMap }} camera={{ position: [5, 3, 7], fov: 50 }} className="w-full h-full">
-      <ambientLight intensity={0.28} />
-      <hemisphereLight args={['#dbeafe', '#544b3e', 0.55]} />
-      <directionalLight position={[9, 13, 8]} intensity={1.75} castShadow shadow-mapSize-width={renderProfile.shadowMapSize} shadow-mapSize-height={renderProfile.shadowMapSize} shadow-bias={-0.0005} shadow-camera-left={-15} shadow-camera-right={15} shadow-camera-top={15} shadow-camera-bottom={-15} />
-      <directionalLight position={[-8, 7, -5]} intensity={0.32} color="#c7d2fe" />
+    <Canvas frameloop="demand" dpr={renderProfile.dpr} performance={{ min: renderProfile.lowPower ? 0.35 : 0.5 }} gl={{ preserveDrawingBuffer: true, powerPreference: renderProfile.lowPower ? 'default' : 'high-performance', antialias: renderProfile.antialias }} onCreated={({ gl }) => { gl.outputColorSpace = THREE.SRGBColorSpace; gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1; }} shadows={!renderProfile.lowPower} camera={{ position: [5, 3, 7], fov: 50 }} className="w-full h-full">
+      <color attach="background" args={['#dbe4ea']} />
+      <ambientLight intensity={0.12} />
+      <hemisphereLight args={['#e5edf4', '#8c8373', 0.65]} />
+      <directionalLight position={[shadowExtent * 0.8, shadowExtent * 1.4, shadowExtent * 0.9]} intensity={2} color="#fff5e6" castShadow={!renderProfile.lowPower} shadow-mapSize-width={renderProfile.shadowMapSize} shadow-mapSize-height={renderProfile.shadowMapSize} shadow-bias={-0.00015} shadow-normalBias={0.015} shadow-camera-near={0.5} shadow-camera-far={shadowExtent * 5} shadow-camera-left={-shadowExtent} shadow-camera-right={shadowExtent} shadow-camera-top={shadowExtent} shadow-camera-bottom={-shadowExtent} />
+      <directionalLight position={[-8, 7, -5]} intensity={0.2} color="#dbe7f2" />
 
       <Suspense fallback={null}>
-        <TrashModel config={config} colors={colors} />
+        <LightweightEnvironment intensity={0.9} />
+        <TrashModel config={config} colors={colors} lowPower={renderProfile.lowPower} />
+        <TrashSceneGround config={config} lowPower={renderProfile.lowPower} />
         {activeDimId && <DimensionsOverlay config={config} activeId={activeDimId} />}
       </Suspense>
+
+      {!renderProfile.lowPower && <ContactShadows position={[0, -0.01, 0]} opacity={0.38} scale={Math.max(24, shadowExtent * 3)} blur={3} far={7} resolution={renderProfile.contactShadowResolution} frames={1} />}
 
       <CameraRig selectedWall={selectedWall} config={config} activeDimId={activeDimId} />
       
