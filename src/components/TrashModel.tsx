@@ -248,7 +248,7 @@ export default function TrashModel({ config, colors = [], lowPower = false }: Tr
     isLeftWall: boolean,
     wallWidth: number,
   ) => {
-    const bands = getTrashPanelBands(getTrashWallPanelHeightCm(config, wall), config.trashPanelPattern || 'narrow');
+    const bands = getTrashPanelBands(getTrashWallPanelHeightCm(config, wall), 'wide');
     const wallElements = (config.elements || []).filter(element => element.wall === wall);
     const minX = isSide ? 0 : -wallWidth / 2;
     const maxX = isSide ? wallWidth : wallWidth / 2;

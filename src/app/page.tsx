@@ -191,7 +191,7 @@ export default function Home() {
         ...applyDefaultRal9006(INITIAL_CONFIG, findRal9006Id(appData?.colors || [])),
         productType: 'trash', width: Number(defaults.w) || 300, length: Number(defaults.l) || 300,
         height: Number(defaults.h) || 220, roofType: 'slope-back', elements: [],
-        trashPanelPattern: 'mixed', trashPanelColors: {},
+        trashPanelPattern: 'wide', trashPanelColors: {},
       });
     } else setConfig(offerProductConfigs.current.garage || initialProject.current);
     setActiveOfferProduct(next);

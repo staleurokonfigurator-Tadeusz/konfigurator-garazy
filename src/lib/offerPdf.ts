@@ -2,7 +2,7 @@ import { previewRoofHeight, elevationPosition, planOpeningRange, PDF_ROOF_HEIGHT
 import { getAssemblyLayout, getFrontCanopy, getSharedRoofProfile, sharedRoofHeightAt, type SharedRoofProfile } from './garageAssembly';
 import { getCarportLayout, getCarportSides, getCarportSettings } from './garageExtras';
 import type { GarageConfig, GarageElement, ProductType, WallFace } from '@/types';
-import { getTrashPanelBands, getTrashPanelColor, getTrashWallPanelHeightCm, TRASH_PANEL_PATTERNS } from './trashPanels';
+import { getTrashPanelBands, getTrashPanelColor, getTrashPanelPatternSettings, getTrashWallPanelHeightCm } from './trashPanels';
 import {
   PDF_FONT, PDF_INK, PDF_MUTED, PDF_BOTTOM,
   safePdfText, loadOfferFonts, drawPdfCard, drawPdfImage, createOfferLayout,
@@ -555,7 +555,7 @@ export async function generateOfferPdf(input: OfferPdfInput, options: OfferPdfOp
     layout.font(11, true);
     doc.text('Konfiguracja indywidualna', 24, heroY + 12);
     layout.font(9, false, PDF_MUTED);
-    doc.text(`Dach ${roofNames[config.roofType] || config.roofType}\n${isTrash ? 'Panele' : 'Ściany'}: ${isTrash ? (TRASH_PANEL_PATTERNS.find(item => item.id === (config.trashPanelPattern || 'narrow'))?.label || 'Poziome panele') : config.buildingMaterial === 'pir' ? materialLabel(config) : profileLabel(config.wallProfile)} / ${color(config.wallColor)}`, 24, heroY + 22, { maxWidth: 158, lineHeightFactor: 1.45 });
+    doc.text(`Dach ${roofNames[config.roofType] || config.roofType}\n${isTrash ? 'Panele' : 'Ściany'}: ${isTrash ? getTrashPanelPatternSettings(config.trashPanelPattern || 'wide').label : config.buildingMaterial === 'pir' ? materialLabel(config) : profileLabel(config.wallProfile)} / ${color(config.wallColor)}`, 24, heroY + 22, { maxWidth: 158, lineHeightFactor: 1.45 });
   }
   const metricY = heroY + heroHeight + 7;
   const metrics = [['SZEROKOŚĆ', getAssemblyLayout(config).width], ['DŁUGOŚĆ', getAssemblyLayout(config).length], ['WYSOKOŚĆ NIŻSZEJ ŚCIANY', getAssemblyLayout(config).height]] as const;
@@ -647,13 +647,13 @@ export async function generateOfferPdf(input: OfferPdfInput, options: OfferPdfOp
   const trashDetails = [
     ['Wymiary wiaty', `${config.width} x ${config.length} x ${config.height} cm (szer. x dł. x wysokość niższej ściany)`],
     ['Typ dachu', roofNames[config.roofType] || config.roofType],
-    ['Wzór paneli', TRASH_PANEL_PATTERNS.find(item => item.id === (config.trashPanelPattern || 'narrow'))?.label || 'Poziome panele'],
+    ['Wzór paneli', `${getTrashPanelPatternSettings(config.trashPanelPattern || 'wide').label} / prześwit 3 cm`],
     ['Dach - kolor', color(config.roofColor)],
     ['Brama - kolor', color(config.gateColor)],
     ['Drzwi - kolor', color(config.doorColor)],
     ...(['front', 'right', 'back', 'left'] as WallFace[]).map(wall => [
       `Panele - ${faceNames[wall].toLowerCase()}`,
-      getTrashPanelBands(getTrashWallPanelHeightCm(config, wall), config.trashPanelPattern || 'narrow').map(band => `${band.index + 1}: ${color(getTrashPanelColor(config, wall, band.index))}`).join(', '),
+      getTrashPanelBands(getTrashWallPanelHeightCm(config, wall), 'wide').map(band => `${band.index + 1}: ${color(getTrashPanelColor(config, wall, band.index))}`).join(', '),
     ]),
   ];
   const details = isTrash ? trashDetails : garageDetails;

@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { GarageConfig, GarageElement, GateType, RoofType, SheetProfile, WallFace } from '@/types';
 import EditableDimension from './EditableDimension';
 import { updateGarageElement } from '@/lib/garageOptions';
-import { getTrashPanelBands, getTrashPanelColor, getTrashPanelPatternSettings, getTrashWallPanelHeightCm, setTrashPanelColor, TRASH_PANEL_PATTERNS } from '@/lib/trashPanels';
+import { getTrashPanelBands, getTrashPanelColor, getTrashPanelPatternSettings, getTrashWallPanelHeightCm, setTrashPanelColor } from '@/lib/trashPanels';
 
 const OfferDialog = dynamic(() => import('./OfferDialog'), { ssr: false });
 
@@ -65,7 +65,7 @@ export default function TrashConfigPanel({ config, setConfig, appData, selectedW
     { title: 'Połysk i gładkie', items: colors.filter(color => !isWoodColor(color) && !normalizedType(color.type).includes('mat')) },
   ].filter(group => group.items.length);
   const getColor = (id: string) => colors.find(color => color.id === id) || { id, hex: id.startsWith('#') ? id : '#d4d4d4', label: id || 'Wybierz', texture: '' };
-  const pattern = config.trashPanelPattern || 'narrow';
+  const pattern = 'wide' as const;
   const patternSettings = getTrashPanelPatternSettings(pattern);
   const panelWallHeight = getTrashWallPanelHeightCm({ height: config.height, roofType: config.roofType }, selectedWall);
   const panelBands = useMemo(() => getTrashPanelBands(panelWallHeight, pattern), [panelWallHeight, pattern]);
@@ -129,13 +129,13 @@ export default function TrashConfigPanel({ config, setConfig, appData, selectedW
     </Section>
 
     <Section title="Układ paneli" icon={<PaintBucket size={20} />}>
-      <div className="grid gap-3 xl:grid-cols-3">
-        {TRASH_PANEL_PATTERNS.map(option => <button type="button" key={option.id} onClick={() => { updateConfig('trashPanelPattern', option.id); setSelectedPanels([]); }} className={`rounded-xl border-2 bg-white p-3 text-left ${pattern === option.id ? 'border-[var(--theme)]' : 'border-zinc-200'}`}>
-          <span className="mb-3 flex h-14 flex-col justify-end overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 px-1.5 pb-1.5">
-            {Array.from({ length: option.id === 'wide' ? 4 : 6 }, (_, index) => option.panelHeightsCm[index % option.panelHeightsCm.length]).map((height, index) => <span key={index} className="block shrink-0 rounded-[2px] bg-amber-600" style={{ height: Math.max(3, height / 3.5), marginTop: Math.max(1, option.gapCm / 2.5) }} />)}
-          </span>
-          <strong className="block text-xs">{option.label}</strong><span className="mt-1 block text-[10px] leading-tight text-zinc-500">{option.description}</span>
-        </button>)}
+      <div className="rounded-xl border-2 border-[var(--theme)] bg-white p-4 text-zinc-900">
+        <div className="mb-3 flex h-16 flex-col justify-end overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 px-2 pb-2">
+          {Array.from({ length: 4 }, (_, index) => <span key={index} className="block h-[9px] shrink-0 rounded-[2px] bg-amber-600" style={{ marginTop: index === 0 ? 0 : 3 }} />)}
+        </div>
+        <strong className="block text-sm">Panele poziome 24 cm</strong>
+        <span className="mt-1 block text-xs leading-relaxed text-zinc-600">Stały prześwit 3 cm. Liczba pełnych paneli jest automatycznie obliczana z wysokości wybranej ściany.</span>
+        <span className="mt-3 inline-flex rounded-full bg-orange-50 px-3 py-1 text-xs font-black text-orange-800">{panelBands.length} paneli na tej ścianie</span>
       </div>
     </Section>
 
