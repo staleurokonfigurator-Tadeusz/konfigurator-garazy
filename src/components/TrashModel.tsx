@@ -34,6 +34,33 @@ function resolveColor(colorId: string | undefined, colors: ColorOption[] = []): 
   };
 }
 
+function ClippedPanelMesh({
+  points, depth, z, material, lowPower,
+}: {
+  points: Array<[number, number]>;
+  depth: number;
+  z: number;
+  material: THREE.Material;
+  lowPower: boolean;
+}) {
+  const geometry = useMemo(() => {
+    const shape = new THREE.Shape();
+    points.forEach(([x, y], index) => index === 0 ? shape.moveTo(x, y) : shape.lineTo(x, y));
+    shape.closePath();
+    const next = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 1 });
+    next.translate(0, 0, -depth / 2);
+    next.computeVertexNormals();
+    return next;
+  }, [depth, points]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return <mesh position={[0, 0, z]} castShadow={!lowPower} receiveShadow>
+    <primitive object={geometry} attach="geometry" />
+    <primitive object={material} attach="material" />
+  </mesh>;
+}
+
 export default function TrashModel({ config, colors = [], lowPower = false }: TrashModelProps) {
   const w = config.width / 100;
   const l = config.length / 100;
@@ -259,25 +286,32 @@ export default function TrashModel({ config, colors = [], lowPower = false }: Tr
         : wall === 'left'
           ? [hFL, hBL, false]
           : [hFR, hBR, false];
-    const visibleInterval = (bandTop: number): [number, number] | null => {
+    const roofHeightAt = (x: number) => {
       if (gable) {
-        if (bandTop <= h) return [minX, maxX];
-        if (bandTop >= h + slopeH) return null;
-        const halfWidth = wallWidth / 2 * (1 - (bandTop - h) / slopeH);
+        return h + slopeH * Math.max(0, 1 - Math.abs(x) / Math.max(wallWidth / 2, 0.001));
+      }
+      const progress = (x - minX) / Math.max(wallWidth, 0.001);
+      return startHeight + (endHeight - startHeight) * progress;
+    };
+    const visibleInterval = (bandBottom: number): [number, number] | null => {
+      if (gable) {
+        if (bandBottom <= h) return [minX, maxX];
+        if (bandBottom >= h + slopeH) return null;
+        const halfWidth = wallWidth / 2 * (1 - (bandBottom - h) / slopeH);
         return [-halfWidth, halfWidth];
       }
       const low = Math.min(startHeight, endHeight);
       const high = Math.max(startHeight, endHeight);
-      if (bandTop <= low) return [minX, maxX];
-      if (bandTop >= high || Math.abs(endHeight - startHeight) < 0.001) return null;
-      const threshold = minX + ((bandTop - startHeight) / (endHeight - startHeight)) * wallWidth;
+      if (bandBottom <= low) return [minX, maxX];
+      if (bandBottom >= high || Math.abs(endHeight - startHeight) < 0.001) return null;
+      const threshold = minX + ((bandBottom - startHeight) / (endHeight - startHeight)) * wallWidth;
       return endHeight > startHeight ? [Math.max(minX, threshold), maxX] : [minX, Math.min(maxX, threshold)];
     };
     return <group position={pos} rotation={[0, rotY, 0]}>
       {bands.flatMap(band => {
         const bandBottom = band.bottomCm / 100;
         const bandTop = (band.bottomCm + band.heightCm) / 100;
-        const wallInterval = visibleInterval(bandTop);
+        const wallInterval = visibleInterval(bandBottom);
         if (!wallInterval) return [];
         let intervals: Array<[number, number]> = [wallInterval];
         for (const element of wallElements) {
@@ -297,10 +331,21 @@ export default function TrashModel({ config, colors = [], lowPower = false }: Tr
             return next;
           });
         }
-        return intervals.filter(([from, to]) => to - from > 0.015).map(([from, to], segmentIndex) => <mesh key={`${wall}-${band.index}-${segmentIndex}`} position={[(from + to) / 2, bandBottom + (band.heightCm / 200), t + 0.004]} scale={[to - from, band.heightCm / 100, 0.018]} castShadow={!lowPower} receiveShadow>
-          <primitive object={unitBox} attach="geometry" />
-          <primitive object={surfaceMaterial(getTrashPanelColor(config, wall, band.index))} attach="material" />
-        </mesh>);
+        const panelMaterial = surfaceMaterial(getTrashPanelColor(config, wall, band.index));
+        return intervals.filter(([from, to]) => to - from > 0.015).map(([from, to], segmentIndex) => {
+          const topAtFrom = Math.min(bandTop, roofHeightAt(from));
+          const topAtTo = Math.min(bandTop, roofHeightAt(to));
+          const fullRectangle = topAtFrom >= bandTop - 0.0001 && topAtTo >= bandTop - 0.0001;
+          if (fullRectangle) return <mesh key={`${wall}-${band.index}-${segmentIndex}`} position={[(from + to) / 2, bandBottom + (band.heightCm / 200), t + 0.004]} scale={[to - from, band.heightCm / 100, 0.018]} castShadow={!lowPower} receiveShadow>
+            <primitive object={unitBox} attach="geometry" />
+            <primitive object={panelMaterial} attach="material" />
+          </mesh>;
+
+          const points: Array<[number, number]> = [[from, bandBottom], [to, bandBottom], [to, topAtTo]];
+          if (gable && from < 0 && to > 0) points.push([0, Math.min(bandTop, roofHeightAt(0))]);
+          points.push([from, topAtFrom]);
+          return <ClippedPanelMesh key={`${wall}-${band.index}-${segmentIndex}`} points={points} depth={0.018} z={t + 0.004} material={panelMaterial} lowPower={lowPower} />;
+        });
       })}
     </group>;
   };
