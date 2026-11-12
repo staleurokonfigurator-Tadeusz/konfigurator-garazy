@@ -2,7 +2,7 @@ import { previewRoofHeight, elevationPosition, planOpeningRange, PDF_ROOF_HEIGHT
 import { getAssemblyLayout, getFrontCanopy, getSharedRoofProfile, sharedRoofHeightAt, type SharedRoofProfile } from './garageAssembly';
 import { getCarportLayout, getCarportSides, getCarportSettings } from './garageExtras';
 import type { GarageConfig, GarageElement, ProductType, WallFace } from '@/types';
-import { getTrashPanelBands, getTrashPanelColor, getTrashPanelPatternSettings, getTrashWallPanelHeightCm, TRASH_PANEL_GAP_CM, TRASH_PANEL_HEIGHT_CM } from './trashPanels';
+import { getTrashPanelBands, getTrashPanelColor, getTrashPanelPatternSettings, getTrashWallPanelHeightCm } from './trashPanels';
 import {
   PDF_FONT, PDF_INK, PDF_MUTED, PDF_BOTTOM,
   safePdfText, loadOfferFonts, drawPdfCard, drawPdfImage, createOfferLayout,
@@ -328,11 +328,16 @@ function drawElevationPlan(
     doc.rect(elementX, elementY, elementWidth, elementHeight, 'FD');
     if (config.productType === 'trash' && (element.type === 'gate' || element.type === 'door')) {
       doc.setFillColor(39, 39, 42);
-      const pitchCm = TRASH_PANEL_HEIGHT_CM + TRASH_PANEL_GAP_CM;
-      for (let panelBottomCm = 0; panelBottomCm + TRASH_PANEL_HEIGHT_CM + TRASH_PANEL_GAP_CM <= boundedHeightCm; panelBottomCm += pitchCm) {
-        const gapTopY = elementY + elementHeight - (panelBottomCm + pitchCm) * scale;
-        doc.rect(elementX, gapTopY, elementWidth, Math.max(0.35, TRASH_PANEL_GAP_CM * scale), 'F');
-      }
+      const wallPanels = getTrashPanelBands(getTrashWallPanelHeightCm(config, wall), 'wide');
+      wallPanels.slice(0, -1).forEach((panel, panelIndex) => {
+        const gapStartCm = panel.bottomCm + panel.heightCm;
+        const gapEndCm = wallPanels[panelIndex + 1].bottomCm;
+        const visibleGapStartCm = Math.max(gapStartCm, bottomCm);
+        const visibleGapEndCm = Math.min(gapEndCm, bottomCm + boundedHeightCm);
+        if (visibleGapEndCm <= visibleGapStartCm) return;
+        const gapY = elementY + elementHeight - (visibleGapEndCm - bottomCm) * scale;
+        doc.rect(elementX, gapY, elementWidth, Math.max(0.35, (visibleGapEndCm - visibleGapStartCm) * scale), 'F');
+      });
       doc.setDrawColor(194, 65, 12);
     }
     doc.setTextColor(55, 55, 55);
@@ -658,8 +663,8 @@ export async function generateOfferPdf(input: OfferPdfInput, options: OfferPdfOp
     ['Typ dachu', roofNames[config.roofType] || config.roofType],
     ['Wzór paneli', `${getTrashPanelPatternSettings(config.trashPanelPattern || 'wide').label} / prześwit 3 cm`],
     ['Dach - kolor', color(config.roofColor)],
-    ['Brama - kolor', color(config.gateColor)],
-    ['Drzwi - kolor', color(config.doorColor)],
+    ['Brama - kolor', `${color(config.gateColor)} / zmienione rzędy zgodne z panelami ściany`],
+    ['Drzwi - kolor', `${color(config.doorColor)} / zmienione rzędy zgodne z panelami ściany`],
     ...(['front', 'right', 'back', 'left'] as WallFace[]).map(wall => [
       `Panele - ${faceNames[wall].toLowerCase()}`,
       getTrashPanelBands(getTrashWallPanelHeightCm(config, wall), 'wide').map(band => `${band.index + 1}: ${color(getTrashPanelColor(config, wall, band.index))}`).join(', '),

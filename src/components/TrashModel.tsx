@@ -4,7 +4,7 @@ import { useEffect, useMemo } from 'react';
 import { GarageConfig, WallFace } from '@/types';
 import * as THREE from 'three';
 import { useTexture } from '@react-three/drei';
-import { getTrashPanelBands, getTrashPanelColor, getTrashWallPanelHeightCm, TRASH_PANEL_GAP_CM, TRASH_PANEL_HEIGHT_CM } from '@/lib/trashPanels';
+import { getTrashPanelBands, getTrashPanelColor, getTrashWallPanelHeightCm } from '@/lib/trashPanels';
 
 interface TrashModelProps {
   config: GarageConfig;
@@ -378,13 +378,21 @@ export default function TrashModel({ config, colors = [], lowPower = false }: Tr
       if (el.wall === 'back') { pos = [-elX, elY + elH/2, -l/2]; rot = [0, Math.PI, 0]; }
       if (el.wall === 'left') { pos = [-w/2, elY + elH/2, -elX]; rot = [0, -Math.PI/2, 0]; }
       if (el.wall === 'right') { pos = [w/2, elY + elH/2, elX]; rot = [0, Math.PI/2, 0]; }
-      const elementPitchCm = TRASH_PANEL_HEIGHT_CM + TRASH_PANEL_GAP_CM;
-      const elementPanels = Array.from({ length: Math.ceil(el.height / elementPitchCm) }, (_, index) => ({
-        index,
-        bottomCm: index * elementPitchCm,
-        heightCm: Math.min(TRASH_PANEL_HEIGHT_CM, el.height - index * elementPitchCm),
-      })).filter(panel => panel.heightCm > 0);
-      const elementMaterial = surfaceMaterial(el.type === 'gate' ? config.gateColor : config.doorColor);
+      const elementBottomCm = el.y || 0;
+      const elementTopCm = elementBottomCm + el.height;
+      const baseElementColor = el.type === 'gate' ? config.gateColor : config.doorColor;
+      const elementPanels = getTrashPanelBands(getTrashWallPanelHeightCm(config, el.wall), 'wide').flatMap(panel => {
+        const visibleBottomCm = Math.max(panel.bottomCm, elementBottomCm);
+        const visibleTopCm = Math.min(panel.bottomCm + panel.heightCm, elementTopCm);
+        if (visibleTopCm <= visibleBottomCm) return [];
+        const selectedWallColor = config.trashPanelColors?.[el.wall]?.[panel.index];
+        return [{
+          index: panel.index,
+          bottomCm: visibleBottomCm - elementBottomCm,
+          heightCm: visibleTopCm - visibleBottomCm,
+          colorId: selectedWallColor || baseElementColor,
+        }];
+      });
 
       return (
         <group key={el.id} position={pos} rotation={rot}>
@@ -395,7 +403,7 @@ export default function TrashModel({ config, colors = [], lowPower = false }: Tr
            </mesh>
            {elementPanels.map(panel => <mesh key={`${el.id}-panel-${panel.index}`} position={[0, -elH / 2 + panel.bottomCm / 100 + panel.heightCm / 200, 0.035]} scale={[elW, panel.heightCm / 100, 0.035]} castShadow={!lowPower} receiveShadow>
               <primitive object={unitBox} attach="geometry" />
-              <primitive object={elementMaterial} attach="material" />
+              <primitive object={surfaceMaterial(panel.colorId)} attach="material" />
            </mesh>)}
            {el.type === 'gate' && el.gateType === 'swing' && <mesh position={[0, 0, 0.056]}><boxGeometry args={[0.018, elH, 0.018]} /><meshStandardMaterial color="#252525" roughness={0.75} /></mesh>}
            <mesh position={[el.hingeSide === 'right' ? -elW * 0.32 : elW * 0.32, 0, 0.06]}><sphereGeometry args={[0.025, 12, 12]} /><meshStandardMaterial color="#161616" metalness={0.6} roughness={0.35} /></mesh>
