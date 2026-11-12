@@ -2,7 +2,7 @@ import { previewRoofHeight, elevationPosition, planOpeningRange, PDF_ROOF_HEIGHT
 import { getAssemblyLayout, getFrontCanopy, getSharedRoofProfile, sharedRoofHeightAt, type SharedRoofProfile } from './garageAssembly';
 import { getCarportLayout, getCarportSides, getCarportSettings } from './garageExtras';
 import type { GarageConfig, GarageElement, ProductType, WallFace } from '@/types';
-import { getTrashPanelBands, getTrashPanelColor, getTrashPanelPatternSettings, getTrashWallPanelHeightCm } from './trashPanels';
+import { getTrashPanelBands, getTrashPanelColor, getTrashPanelPatternSettings, getTrashWallPanelHeightCm, TRASH_PANEL_GAP_CM, TRASH_PANEL_HEIGHT_CM } from './trashPanels';
 import {
   PDF_FONT, PDF_INK, PDF_MUTED, PDF_BOTTOM,
   safePdfText, loadOfferFonts, drawPdfCard, drawPdfImage, createOfferLayout,
@@ -326,6 +326,15 @@ function drawElevationPlan(
     doc.setDrawColor(194, 65, 12);
     doc.setLineWidth(0.4);
     doc.rect(elementX, elementY, elementWidth, elementHeight, 'FD');
+    if (config.productType === 'trash' && (element.type === 'gate' || element.type === 'door')) {
+      doc.setFillColor(39, 39, 42);
+      const pitchCm = TRASH_PANEL_HEIGHT_CM + TRASH_PANEL_GAP_CM;
+      for (let panelBottomCm = 0; panelBottomCm + TRASH_PANEL_HEIGHT_CM + TRASH_PANEL_GAP_CM <= boundedHeightCm; panelBottomCm += pitchCm) {
+        const gapTopY = elementY + elementHeight - (panelBottomCm + pitchCm) * scale;
+        doc.rect(elementX, gapTopY, elementWidth, Math.max(0.35, TRASH_PANEL_GAP_CM * scale), 'F');
+      }
+      doc.setDrawColor(194, 65, 12);
+    }
     doc.setTextColor(55, 55, 55);
     doc.setFont(PDF_FONT, 'bold');
     // Numer łączy otwór z tabelą; małe okna nie dostają nachodzących na siebie opisów.
