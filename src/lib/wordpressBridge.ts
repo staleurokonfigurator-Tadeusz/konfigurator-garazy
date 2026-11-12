@@ -1,4 +1,4 @@
-import type { GarageConfig } from '@/types';
+import type { GarageConfig, ProductType } from '@/types';
 import type { OfferCustomer } from '@/lib/offerPdf';
 
 export const WORDPRESS_MESSAGE_VERSION = 2;
@@ -52,6 +52,7 @@ export function postCheckoutToWordPress(message: CheckoutMessage, targetOrigin: 
 }
 
 export function createOfferInWordPress(input: {
+  productType?: ProductType;
   config: GarageConfig;
   customer: OfferCustomer;
   estimatedPrice: number;
@@ -105,6 +106,7 @@ export function createOfferInWordPress(input: {
       action: 'konfigurator_create_offer',
       version: WORDPRESS_MESSAGE_VERSION,
       requestId,
+      productType: input.productType || input.config.productType || 'garage',
       config: input.config,
       customer: input.customer,
       estimatedPrice: input.estimatedPrice,

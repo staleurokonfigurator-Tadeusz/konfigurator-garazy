@@ -464,7 +464,17 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
             
             {isPir && i === 0 && <p className="mb-3 text-xs font-semibold text-zinc-600">Ta brama jest w cenie PIR. Dodatkowe drzwi i napęd według cennika.</p>}
             <div className="space-y-4 mb-3">
-            <div className="mb-2">
+            {isOfferMode ? (() => {
+              const gateWallWidth = gate.wall === 'front' || gate.wall === 'back' ? config.width : config.length;
+              const left = Math.round(gateWallWidth / 2 + gate.x - gate.width / 2);
+              return <div className="grid grid-cols-2 gap-3 rounded-xl border border-orange-200 bg-orange-50 p-3">
+                <label className="text-[10px] font-bold uppercase text-zinc-600">Szerokość (cm)<input type="number" min={50} max={gateWallWidth} value={gate.width} onChange={event => updateElement(gate.id, { width: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-bold" /></label>
+                <label className="text-[10px] font-bold uppercase text-zinc-600">Wysokość (cm)<input type="number" min={80} max={config.height} value={gate.height} onChange={event => updateElement(gate.id, { height: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-bold" /></label>
+                <label className="text-[10px] font-bold uppercase text-zinc-600">Od lewej krawędzi (cm)<input type="number" min={0} max={Math.max(0, gateWallWidth - gate.width)} value={left} onChange={event => updateElement(gate.id, { x: Number(event.target.value) - gateWallWidth / 2 + gate.width / 2 })} className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-bold" /></label>
+                <label className="text-[10px] font-bold uppercase text-zinc-600">Od posadzki (cm)<input type="number" min={0} max={Math.max(0, config.height - gate.height)} value={gate.y} onChange={event => updateElement(gate.id, { y: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-bold" /></label>
+                <p className="col-span-2 text-[10px] text-zinc-600">Do prawej krawędzi: <strong>{Math.max(0, Math.round(gateWallWidth - left - gate.width))} cm</strong></p>
+              </div>;
+            })() : <div className="mb-2">
                 <label className="text-[10px] text-zinc-500 font-bold uppercase mb-1 block">Wymiar Bramy (Wys x Szer)</label>
                 <select 
                   disabled={isReadOnly}
@@ -509,7 +519,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
                     }
                   })()}
                 </select>
-              </div>
+              </div>}
 
               {(gate.gateType === 'up-and-over' || gate.gateType === 'swing') && (
                 <div>
@@ -530,7 +540,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
                 </div>
               )}
               
-              <div>
+              {!isOfferMode && <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-[10px] text-zinc-500 font-bold uppercase">Przesunięcie w poziomie (cm)</label>
                   <input type="number" disabled={isReadOnly} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-16 border border-zinc-300 p-1 rounded text-xs bg-zinc-50 outline-none text-right disabled:opacity-80 disabled:cursor-not-allowed" />
@@ -539,7 +549,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
                   const gateWallWidth = gate.wall === 'front' || gate.wall === 'back' ? config.width : config.length;
                   return <input type="range" min={Math.ceil(-(gateWallWidth / 2) + gate.width/2)} max={Math.floor((gateWallWidth / 2) - gate.width/2)} step={1} value={gate.x} onChange={(e) => updateElement(gate.id, { x: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />;
                 })()}
-              </div>
+              </div>}
 
               {(gate.gateType === 'up-and-over' || gate.gateType === 'swing') && (
                 <div className="mt-2 pt-2 border-t border-zinc-100">
@@ -630,7 +640,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
                   </div>
 
                   <div className="space-y-4">
-                  {(el.type === 'window' || el.type === 'pvc-window') ? (
+                  {!isOfferMode && (el.type === 'window' || el.type === 'pvc-window') ? (
                       <div className="mb-2">
                         <label className="text-[10px] text-zinc-500 font-bold uppercase mb-1 block">Wymiar Okna (Wys x Szer)</label>
                         <select 
@@ -655,7 +665,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
                           })()}
                         </select>
                       </div>
-                    ) : el.type === 'skylight' ? (
+                    ) : !isOfferMode && el.type === 'skylight' ? (
                        <div className="mb-2">
                           <label className="text-[10px] text-zinc-500 font-bold uppercase mb-1 block">Długość Świetlika (w cm)</label>
                           <input type="number" disabled={isReadOnly} value={el.width} onChange={(e) => updateElement(el.id, { width: Number(e.target.value) })} className="w-full border border-zinc-300 p-2 rounded text-sm bg-zinc-50 outline-none disabled:opacity-80" />
@@ -680,7 +690,14 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4 mb-2">
+                    {isOfferMode ? (() => {
+                      const left = Math.round(wallW / 2 + el.x - el.width / 2);
+                      return <div className="grid grid-cols-2 gap-3 rounded-xl border border-orange-200 bg-orange-50 p-3">
+                        <label className="text-[10px] font-bold uppercase text-zinc-600">Od lewej krawędzi (cm)<input type="number" min={0} max={Math.max(0, wallW - el.width)} value={left} onChange={event => updateElement(el.id, { x: Number(event.target.value) - wallW / 2 + el.width / 2 })} className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-bold" /></label>
+                        <label className="text-[10px] font-bold uppercase text-zinc-600">Od posadzki (cm)<input type="number" min={0} max={maxY} value={el.y} onChange={event => updateElement(el.id, { y: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-bold" /></label>
+                        <p className="col-span-2 text-[10px] text-zinc-600">Do prawej krawędzi: <strong>{Math.max(0, Math.round(wallW - left - el.width))} cm</strong></p>
+                      </div>;
+                    })() : <div className="grid grid-cols-2 gap-4 mb-2">
                       <div>
                         <div className="flex justify-between items-center mb-1">
                           <label className="text-[10px] text-zinc-500 font-bold uppercase truncate pr-1">Przesunięcie w poziomie</label>
@@ -695,7 +712,7 @@ export default function ConfigPanel({ config, assemblyConfig, assemblyControls, 
                         </div>
                         {!isReadOnly && <input type="range" min={0} max={maxY} step={1} value={el.y} onChange={(e) => updateElement(el.id, { y: Number(e.target.value) })} className="w-full" style={{accentColor: 'var(--theme)'}} />}
                       </div>
-                    </div>
+                    </div>}
 
                     {el.type === 'door' && (
                       <div className="mt-2 pt-3 border-t border-zinc-100">

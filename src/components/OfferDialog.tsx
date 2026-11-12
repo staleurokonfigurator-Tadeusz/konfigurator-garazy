@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import { FileDown, X } from 'lucide-react';
-import type { GarageConfig, WallFace } from '@/types';
+import type { GarageConfig, ProductType, WallFace } from '@/types';
 import { generateOfferPdf, type OfferCustomer } from '@/lib/offerPdf';
 import { parseManualOfferPrice } from '@/lib/offerPrice';
 import { createOfferInWordPress } from '@/lib/wordpressBridge';
 
 interface OfferDialogProps {
+  productType?: ProductType;
   config: GarageConfig;
   estimatedPrice: number;
   colors: Array<{ id: string; label?: string }>;
@@ -26,12 +27,12 @@ const EMPTY_CUSTOMER: OfferCustomer = {
 
 const wait = (ms: number) => new Promise(resolve => window.setTimeout(resolve, ms));
 
-export default function OfferDialog({ config, estimatedPrice, colors, addons = [], selectedWall, setSelectedWall, onClose, storeUrl, requestARExport, onCaptureViewsChange }: OfferDialogProps) {
+export default function OfferDialog({ productType = 'garage', config, estimatedPrice, colors, addons = [], selectedWall, setSelectedWall, onClose, storeUrl, requestARExport, onCaptureViewsChange }: OfferDialogProps) {
   const [customer, setCustomer] = useState<OfferCustomer>(EMPTY_CUSTOMER);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
-  const [useManualPrice,setUseManualPrice] = useState(false);
-  const [manualPrice,setManualPrice] = useState('');
+  const [useManualPrice,setUseManualPrice] = useState(productType === 'trash');
+  const [manualPrice,setManualPrice] = useState(productType === 'trash' && estimatedPrice > 0 ? estimatedPrice.toFixed(2) : '');
 
   const updateCustomer = <K extends keyof OfferCustomer>(key: K, value: OfferCustomer[K]) => {
     setCustomer(previous => ({ ...previous, [key]: value }));
@@ -71,15 +72,16 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
       const offerConfig: GarageConfig = config.hasCarport
         ? {
             ...config,
+            productType,
             carportWidth: config.carportWidth || 300,
             carportSide: config.carportSide || 'right',
           }
-        : config;
+        : { ...config, productType };
       const views = await captureViews();
       if (!requestARExport) throw new Error('Eksporter modelu AR jest niedostępny.');
       const arModel = await requestARExport();
       const colorLabels = Object.fromEntries(colors.map(color => [color.id, color.label || color.id]));
-      const wordpressOffer = await createOfferInWordPress({ config: offerConfig, customer, estimatedPrice, useManualPrice, manualPrice:selectedPrice, storeUrl, arModel });
+      const wordpressOffer = await createOfferInWordPress({ productType, config: offerConfig, customer, estimatedPrice, useManualPrice, manualPrice:selectedPrice, storeUrl, arModel });
       const finalCustomer = {
         ...customer,
         // QR zawsze wskazuje model GLB zapisany dla tej konkretnej oferty.
@@ -87,6 +89,7 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
       };
       await generateOfferPdf({
         offerNumber: wordpressOffer.offerNumber,
+        productType,
         customer: finalCustomer,
         config: offerConfig,
         estimatedPrice: wordpressOffer.verifiedPrice,
@@ -110,7 +113,7 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
         <header className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-200 bg-white/95 px-6 py-5 backdrop-blur">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.2em] text-orange-600">Panel ofertowy</p>
-            <h2 className="mt-1 text-xl sm:text-2xl font-black">Przygotuj ofertę PDF</h2>
+            <h2 className="mt-1 text-xl sm:text-2xl font-black">Przygotuj ofertę PDF · {productType === 'trash' ? 'wiata śmietnikowa' : 'garaż'}</h2>
           </div>
           <button onClick={onClose} disabled={generating} className="rounded-full p-2 hover:bg-zinc-100 disabled:opacity-50" aria-label="Zamknij">
             <X size={22} />
@@ -125,7 +128,7 @@ export default function OfferDialog({ config, estimatedPrice, colors, addons = [
             </select>
           </label>
           <section className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 md:col-span-2">
-            <p className="text-sm text-zinc-600">Cena z cennika: <strong>{estimatedPrice.toLocaleString('pl-PL',{minimumFractionDigits:2,maximumFractionDigits:2})} zł</strong></p>
+            <p className="text-sm text-zinc-600">{productType === 'trash' ? 'Cena robocza' : 'Cena z cennika'}: <strong>{estimatedPrice.toLocaleString('pl-PL',{minimumFractionDigits:2,maximumFractionDigits:2})} zł</strong></p>
             <label className="mt-3 flex items-center gap-3 text-sm font-bold"><input type="checkbox" disabled={generating} checked={useManualPrice} onChange={event=>{setUseManualPrice(event.target.checked);setError('');if(event.target.checked && !manualPrice)setManualPrice(estimatedPrice>0 ? estimatedPrice.toFixed(2) : '');}} className="h-5 w-5 rounded" />Własna cena</label>
             {useManualPrice && <label className="mt-3 block text-sm font-bold">Ostateczna cena oferty (zł)<input inputMode="decimal" maxLength={16} disabled={generating} value={manualPrice} onChange={event=>{setManualPrice(event.target.value);setError('');}} placeholder="Np. 25 000,00" className="mt-2 w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 font-normal" /><span className="mt-2 block text-xs font-normal text-zinc-600">Ta kwota zostanie zapisana w ofercie i pokazana w PDF.</span></label>}
           </section>

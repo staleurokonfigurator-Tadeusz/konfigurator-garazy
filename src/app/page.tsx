@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, UIEvent, useEffect, useRef, useCallback } from 'react';
-import { GarageConfig, WallFace } from '@/types';
+import { GarageConfig, ProductType, WallFace } from '@/types';
 import ConfigPanel from '@/components/ConfigPanel';
 import CarportConfigPanel from '@/components/CarportConfigPanel';
 import PergolaConfigPanel from '@/components/PergolaConfigPanel';
@@ -98,6 +98,8 @@ export default function Home() {
   const [wpAdminUrl, setWpAdminUrl] = useState("");
   const [storeUrl, setStoreUrl] = useState("");
   const [isOfferMode, setIsOfferMode] = useState(false);
+  const [activeOfferProduct, setActiveOfferProduct] = useState<ProductType>('garage');
+  const offerProductConfigs = useRef<Partial<Record<ProductType, GarageConfig>>>({});
 
   const [isGeneratingAR, setIsGeneratingAR] = useState<boolean>(false);
   const [arBlobUrl, setArBlobUrl] = useState<string | null>(null);
@@ -152,10 +154,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!isOfferMode || !projectKey || isReadOnly) return;
+    if (!isOfferMode || activeOfferProduct !== 'garage' || !projectKey || isReadOnly) return;
     try { writeDraft(window.localStorage, projectKey, config); setDraftError(false); }
     catch { setDraftError(true); }
-  }, [config, projectKey, isReadOnly, isOfferMode]);
+  }, [config, projectKey, isReadOnly, isOfferMode, activeOfferProduct]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const setGarageConfig = useCallback<React.Dispatch<React.SetStateAction<GarageConfig>>>(next => {
@@ -176,6 +178,25 @@ export default function Home() {
   const resetProject = () => {
     setGarageConfig({ ...initialProject.current, elements: initialProject.current.elements.map(element => ({...element, id:uuidv4()})) });
     setSelectedWall('front'); setActiveDimId(null); setActiveStep(1);
+  };
+
+  const switchOfferProduct = (next: ProductType) => {
+    if (next === activeOfferProduct) return;
+    offerProductConfigs.current[activeOfferProduct] = config;
+    const saved = offerProductConfigs.current[next];
+    if (saved) setConfig(saved);
+    else if (next === 'trash') {
+      const defaults = appData?.trashConfig || appData?.baseConfig || {};
+      setConfig({
+        ...applyDefaultRal9006(INITIAL_CONFIG, findRal9006Id(appData?.colors || [])),
+        productType: 'trash', width: Number(defaults.w) || 300, length: Number(defaults.l) || 300,
+        height: Number(defaults.h) || 220, roofType: 'slope-back', elements: [],
+        trashPanelPattern: 'mixed', trashPanelColors: {},
+      });
+    } else setConfig(offerProductConfigs.current.garage || initialProject.current);
+    setActiveOfferProduct(next);
+    setSelectedWall('front');
+    setActiveDimId(null);
   };
 
   useEffect(() => () => {
@@ -236,6 +257,8 @@ export default function Home() {
 
   if (!appData) return <div className="flex h-screen items-center justify-center bg-zinc-900"><div className="animate-spin w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full"></div></div>;
 
+  const activeProductType = isOfferMode ? activeOfferProduct : appData?.activeType;
+
   return (
     <>
       {arBlobUrl && <Script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js" strategy="afterInteractive" />}
@@ -265,11 +288,11 @@ export default function Home() {
 
       <main className="garage-configurator flex flex-col md:flex-row h-dvh w-full overflow-hidden bg-zinc-50" style={{ '--theme': appData.themeColor } as React.CSSProperties}>
         <div className={`w-full relative bg-zinc-900 shadow-inner h-[min(28svh,240px)] shrink-0 md:h-full ${isReadOnly ? 'md:w-[65%]' : 'md:w-[60%]'}`}>
-          {appData?.activeType === 'carport' ? (
+          {activeProductType === 'carport' ? (
             <CarportCanvasArea config={config} selectedWall={selectedWall} colors={appData?.colors || []} isGeneratingAR={isGeneratingAR} onExportAR={handleExportAR} />
-          ) : appData?.activeType === 'pergola' ? (
+          ) : activeProductType === 'pergola' ? (
             <PergolaCanvasArea config={config} selectedWall={selectedWall} colors={appData?.colors || []} isGeneratingAR={isGeneratingAR} onExportAR={handleExportAR} />
-          ) : appData?.activeType === 'trash' ? (
+          ) : activeProductType === 'trash' ? (
             <TrashCanvasArea config={config} selectedWall={selectedWall} activeDimId={activeDimId} colors={appData?.colors || []} isGeneratingAR={isGeneratingAR} onExportAR={handleExportAR} />
           ) : (
             <CanvasArea activeGarage={editSecond ? 1 : 0} cameraOverview={isCapturingOfferViews}
@@ -317,16 +340,24 @@ export default function Home() {
             </div>
           )}
 
+          {isOfferMode && !isReadOnly && <div className="border-b border-zinc-200 bg-zinc-50 p-3">
+            <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">Rodzaj oferty</p>
+            <div className="grid grid-cols-2 gap-2 rounded-xl bg-white p-1 shadow-sm ring-1 ring-zinc-200">
+              <button type="button" onClick={() => switchOfferProduct('garage')} className={`rounded-lg px-3 py-2 text-sm font-bold ${activeOfferProduct === 'garage' ? 'bg-zinc-900 text-white' : 'text-zinc-600'}`}>Garaż</button>
+              <button type="button" onClick={() => switchOfferProduct('trash')} className={`rounded-lg px-3 py-2 text-sm font-bold ${activeOfferProduct === 'trash' ? 'bg-zinc-900 text-white' : 'text-zinc-600'}`}>Wiata śmietnikowa</button>
+            </div>
+          </div>}
+
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 md:p-6 custom-scrollbar scroll-smooth" onScroll={handleScroll}>
-            {appData?.activeType === 'carport' ? (
+            {activeProductType === 'carport' ? (
               <CarportConfigPanel config={config} setConfig={setConfig} appData={appData} />
-            ) : appData?.activeType === 'pergola' ? (
+            ) : activeProductType === 'pergola' ? (
               <PergolaConfigPanel config={config} setConfig={setConfig} appData={appData} />
-            ) : appData?.activeType === 'trash' ? (
-              <TrashConfigPanel config={config} setConfig={setConfig} selectedWall={selectedWall} setSelectedWall={setSelectedWall} appData={appData} isGeneratingAR={isGeneratingAR} setIsGeneratingAR={setIsGeneratingAR} />
+            ) : activeProductType === 'trash' ? (
+              <TrashConfigPanel config={config} setConfig={setConfig} selectedWall={selectedWall} setSelectedWall={setSelectedWall} appData={appData} isOfferMode={isOfferMode} storeUrl={storeUrl || appData?.storeUrl} requestARExport={requestOfferARExport} onCaptureViewsChange={setIsCapturingOfferViews} activeDimId={activeDimId} setActiveDimId={setActiveDimId} />
             ) : (
               <>
-              {isOfferMode && !isReadOnly && projectKey && <ProjectToolbar config={config} storageKey={projectKey} onLoad={next=>{setGarageConfig(next);setActiveDimId(null);setSelectedWall('front');}} onReset={resetProject} draftError={draftError} />}
+              {isOfferMode && activeOfferProduct === 'garage' && !isReadOnly && projectKey && <ProjectToolbar config={config} storageKey={projectKey} onLoad={next=>{setGarageConfig(next);setActiveDimId(null);setSelectedWall('front');}} onReset={resetProject} draftError={draftError} />}
 
               <ConfigPanel key={editSecond ? 'second' : 'first'}
                 assemblyControls={(appData?.features?.twoGarages !== false || config.assembly) && (config.hasCarport || config.assembly) && <AssemblyPanel config={config} setConfig={setGarageConfig} activeGarage={editSecond ? 1 : 0} onSelect={index => {setActiveGarage(index);setActiveDimId(null);setSelectedWall('front');}} enabled={appData?.features?.twoGarages !== false} isReadOnly={isReadOnly} />}

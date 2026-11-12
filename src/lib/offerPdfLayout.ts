@@ -54,7 +54,7 @@ export function drawPdfImage(doc: jsPDF, image: string, x: number, y: number, wi
     imageWidth, imageHeight, undefined, 'FAST');
 }
 
-export function createOfferLayout(doc: jsPDF, brand: string, offerNumber: string, accent: string) {
+export function createOfferLayout(doc: jsPDF, brand: string, offerNumber: string, accent: string, documentLabel = 'OFERTA GARAŻU') {
   const font = (size = 9, bold = false, color = PDF_INK) => {
     doc.setFont(PDF_FONT, bold ? 'bold' : 'normal');
     doc.setFontSize(size);
@@ -66,7 +66,7 @@ export function createOfferLayout(doc: jsPDF, brand: string, offerNumber: string
     doc.text(brand, PDF_MARGIN, 18);
     font(7, false, PDF_MUTED);
     doc.setCharSpace(1.1);
-    doc.text('OFERTA GARAŻU', PDF_MARGIN, 25);
+    doc.text(documentLabel, PDF_MARGIN, 25);
     doc.setCharSpace(0);
     font(8, false, PDF_MUTED);
     const numberLines: string[] = doc.splitTextToSize(`Oferta nr ${safePdfText(offerNumber, 60)}`, 72);

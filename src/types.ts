@@ -1,6 +1,8 @@
 export type RoofType = 'dual-slope' | 'dual-slope-front-back' | 'slope-front' | 'slope-back' | 'slope-left' | 'slope-right';
 export type WallFace = 'front' | 'back' | 'left' | 'right';
 export type GateType = 'up-and-over' | 'swing' | 'sectional';
+export type ProductType = 'garage' | 'trash';
+export type TrashPanelPattern = 'narrow' | 'wide' | 'mixed';
 
 export type SheetProfile = 'pionowe-t7' | 'poziome-t7' | 'pionowe-t14' | 'poziome-t14' | 'pionowe-t17' | 'poziome-t17';
 
@@ -27,6 +29,7 @@ export interface CarportSettings {
 }
 
 export interface GarageConfig {
+  productType?: ProductType;
   // A composition contains exactly two independently configured garages.
   assembly?: { second: GarageConfig; gapWidth: number; middleType?: 'carport' | 'recess' };
   frontCanopyWalls?: boolean; // Two side returns; included in PIR.
@@ -78,4 +81,8 @@ export interface GarageConfig {
   };
   carportBaseColor?: string;
   carportInsertColor?: string;
+
+  // Wiata śmietnikowa: rzeczywiste, poziome panele mogą mieć niezależne kolory.
+  trashPanelPattern?: TrashPanelPattern;
+  trashPanelColors?: Partial<Record<WallFace, string[]>>;
 }

@@ -1,7 +1,8 @@
 import { previewRoofHeight, elevationPosition, planOpeningRange, PDF_ROOF_HEIGHT_NOTICE, PREVIEW_ROOF_RISE_CM } from './roofDimensions';
 import { getAssemblyLayout, getFrontCanopy, getSharedRoofProfile, sharedRoofHeightAt, type SharedRoofProfile } from './garageAssembly';
 import { getCarportLayout, getCarportSides, getCarportSettings } from './garageExtras';
-import type { GarageConfig, GarageElement, WallFace } from '@/types';
+import type { GarageConfig, GarageElement, ProductType, WallFace } from '@/types';
+import { getTrashPanelBands, getTrashPanelColor, getTrashWallPanelHeightCm, TRASH_PANEL_PATTERNS } from './trashPanels';
 import {
   PDF_FONT, PDF_INK, PDF_MUTED, PDF_BOTTOM,
   safePdfText, loadOfferFonts, drawPdfCard, drawPdfImage, createOfferLayout,
@@ -20,6 +21,7 @@ export interface OfferCustomer {
 }
 
 export interface OfferPdfInput {
+  productType?: ProductType;
   offerNumber: string;
   customer: OfferCustomer;
   config: GarageConfig;
@@ -31,6 +33,8 @@ export interface OfferPdfInput {
   priceVerified?: boolean;
   priceSource?: 'catalogue' | 'manual';
 }
+
+export interface OfferPdfOptions { download?: boolean }
 
 const wallNames: Record<WallFace, string> = {
   front: 'Widok z przodu',
@@ -473,11 +477,15 @@ function drawSharedAssemblyElevation(doc: import('jspdf').jsPDF, config: GarageC
   doc.setFontSize(7.5);doc.text(doc.splitTextToSize(PDF_ROOF_HEIGHT_NOTICE,maxWidth),x,bottom+25);
 }
 
-export async function generateOfferPdf(input: OfferPdfInput) {
+export async function generateOfferPdf(input: OfferPdfInput, options: OfferPdfOptions = {}) {
   const [{ jsPDF }, QRCode] = await Promise.all([import('jspdf'), import('qrcode')]);
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true, putOnlyUsedFonts: true });
   await loadOfferFonts(doc);
   const config = input.config;
+  const productType: ProductType = input.productType || config.productType || 'garage';
+  const isTrash = productType === 'trash';
+  const productName = isTrash ? 'wiata śmietnikowa' : 'garaż';
+  const productNameGenitive = isTrash ? 'wiaty śmietnikowej' : 'garażu';
   const currency = input.currency || 'PLN';
   const createdAt = new Date();
   const validUntil = new Date(createdAt);
@@ -485,7 +493,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   const formatDate = (date: Date) => date.toLocaleDateString('pl-PL', { timeZone: 'Europe/Warsaw' });
   const brand = input.customer.brand === 'staleuro' ? 'STAL EURO' : 'GARDHOUSE';
   const accent = input.customer.brand === 'staleuro' ? '#dc2626' : '#ea580c';
-  const layout = createOfferLayout(doc, brand, input.offerNumber, accent);
+  const layout = createOfferLayout(doc, brand, input.offerNumber, accent, isTrash ? 'OFERTA WIATY ŚMIETNIKOWEJ' : 'OFERTA GARAŻU');
   const carportWidth = getCarportWidthCm(config);
   const color = (id: string) => safeText(input.colorLabels[id] || id, 180);
   const orderedWalls: WallFace[] = ['front', 'right', 'back', 'left'];
@@ -494,12 +502,12 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     .format(input.estimatedPrice) + (currency === 'PLN' ? ' zł' : ` ${safeText(currency, 8)}`);
   doc.setProperties({
     title: `${brand} - oferta ${safeText(input.offerNumber, 60)}`,
-    subject: 'Indywidualna konfiguracja garażu, rysunki i wizualizacje',
-    author: brand, creator: 'Konfigurator garaży',
+    subject: `Indywidualna konfiguracja ${productNameGenitive}, rysunki i wizualizacje`,
+    author: brand, creator: 'Konfigurator obiektów',
   });
 
   // Strona otwierająca: czytelne dane klienta, jedna cena i wizualizacja bez rozciągania.
-  layout.header(config.assembly ? (config.assembly.middleType === 'recess' ? 'Dwa garaże z wnęką' : 'Dwa garaże z wiatą') : carportWidth > 0 ? 'Oferta na garaż z wiatą' : 'Oferta na garaż');
+  layout.header(isTrash ? 'Oferta na wiatę śmietnikową' : config.assembly ? (config.assembly.middleType === 'recess' ? 'Dwa garaże z wnęką' : 'Dwa garaże z wiatą') : carportWidth > 0 ? 'Oferta na garaż z wiatą' : 'Oferta na garaż');
   layout.font(8.5, false, PDF_MUTED);
   doc.text(`Data przygotowania: ${formatDate(createdAt)}`, 16, 56);
   doc.text(`Ważna do: ${formatDate(validUntil)}`, 194, 56, { align: 'right' });
@@ -547,10 +555,10 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     layout.font(11, true);
     doc.text('Konfiguracja indywidualna', 24, heroY + 12);
     layout.font(9, false, PDF_MUTED);
-    doc.text(`Dach ${roofNames[config.roofType] || config.roofType}\nŚciany: ${config.buildingMaterial === 'pir' ? materialLabel(config) : profileLabel(config.wallProfile)} / ${color(config.wallColor)}`, 24, heroY + 22, { maxWidth: 158, lineHeightFactor: 1.45 });
+    doc.text(`Dach ${roofNames[config.roofType] || config.roofType}\n${isTrash ? 'Panele' : 'Ściany'}: ${isTrash ? (TRASH_PANEL_PATTERNS.find(item => item.id === (config.trashPanelPattern || 'narrow'))?.label || 'Poziome panele') : config.buildingMaterial === 'pir' ? materialLabel(config) : profileLabel(config.wallProfile)} / ${color(config.wallColor)}`, 24, heroY + 22, { maxWidth: 158, lineHeightFactor: 1.45 });
   }
   const metricY = heroY + heroHeight + 7;
-  const metrics = [['SZEROKOŚĆ UKŁADU', getAssemblyLayout(config).width], ['DŁUGOŚĆ', getAssemblyLayout(config).length], ['WYSOKOŚĆ NIŻSZEJ ŚCIANY', getAssemblyLayout(config).height]] as const;
+  const metrics = [['SZEROKOŚĆ', getAssemblyLayout(config).width], ['DŁUGOŚĆ', getAssemblyLayout(config).length], ['WYSOKOŚĆ NIŻSZEJ ŚCIANY', getAssemblyLayout(config).height]] as const;
   metrics.forEach(([label, value], index) => {
     const x = 16 + index * 61;
     drawPdfCard(doc, x, metricY, 56, 24);
@@ -617,7 +625,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
       .map(face => face === 'front' ? 'przód' : face === 'back' ? 'tył' : 'bok').join(', ');
     return `${item.side === 'left' ? 'Lewa' : 'Prawa'}: ${item.width} cm / słupy: ${color(item.postColor)}\nZabudowa: ${walls || 'bez zabudowy'}`;
   }).join('\n');
-  const details = [
+  const garageDetails = [
     ['Wymiary garażu', `${config.width} x ${config.length} x ${config.height} cm (szer. x dł. x wysokość niższej ściany)`],
     ['Wysokość szczytu / wyższej ściany', 'Do ustalenia po konsultacji z projektantem. Dach w podglądzie jest orientacyjny.'],
     ['Materiał ścian i dachu', materialLabel(config)],
@@ -636,6 +644,19 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     ['Usunięcie folii ochronnej', config.removeFoil ? 'Tak' : 'Nie'],
     ['Opcje dodatkowe', extraOptions.length ? extraOptions.join(', ') : 'Brak dodatkowych opcji'],
   ];
+  const trashDetails = [
+    ['Wymiary wiaty', `${config.width} x ${config.length} x ${config.height} cm (szer. x dł. x wysokość niższej ściany)`],
+    ['Typ dachu', roofNames[config.roofType] || config.roofType],
+    ['Wzór paneli', TRASH_PANEL_PATTERNS.find(item => item.id === (config.trashPanelPattern || 'narrow'))?.label || 'Poziome panele'],
+    ['Dach - kolor', color(config.roofColor)],
+    ['Brama - kolor', color(config.gateColor)],
+    ['Drzwi - kolor', color(config.doorColor)],
+    ...(['front', 'right', 'back', 'left'] as WallFace[]).map(wall => [
+      `Panele - ${faceNames[wall].toLowerCase()}`,
+      getTrashPanelBands(getTrashWallPanelHeightCm(config, wall), config.trashPanelPattern || 'narrow').map(band => `${band.index + 1}: ${color(getTrashPanelColor(config, wall, band.index))}`).join(', '),
+    ]),
+  ];
+  const details = isTrash ? trashDetails : garageDetails;
   let specY = layout.table(['PARAMETR', 'WYBRANY WARIANT'], details, [55, 123], 63, 'Specyfikacja - ciąg dalszy') + 12;
   if (specY + 33 > PDF_BOTTOM) { layout.page('Bramy, drzwi i okna' + unitLabel); specY = 59; }
   specY = layout.section('Bramy, drzwi, okna i świetliki', specY);
@@ -663,12 +684,12 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   const planScale = Math.min(142 / (config.width + carportWidth), 78 / (config.length+getFrontCanopy(config)));
   drawDimensionPlan(doc, config, 105 - (config.width + carportWidth) * planScale / 2, 89, 142, 78);
   layout.font(8, true, PDF_MUTED);
-  doc.text('PRZÓD GARAŻU', 105, 89 + config.length * planScale + 17, { align: 'center' });
+  doc.text(isTrash ? 'PRZÓD WIATY' : 'PRZÓD GARAŻU', 105, 89 + config.length * planScale + 17, { align: 'center' });
   drawTechnicalLegend(doc, 202);
   layout.font(10, true);
   doc.text(`Wysokość niższej ściany do okapu (H min): ${config.height} cm`, 16, 240);
   layout.font(9, false, PDF_MUTED);
-  doc.text(carportWidth > 0 ? `Łączna szerokość garażu z wiatą: ${config.width + carportWidth} cm.` : `Powierzchnia garażu: ${(config.width * config.length / 10000).toLocaleString('pl-PL')} m².`, 16, 250);
+  doc.text(carportWidth > 0 ? `Łączna szerokość garażu z wiatą: ${config.width + carportWidth} cm.` : `Powierzchnia ${isTrash ? 'wiaty' : 'garażu'}: ${(config.width * config.length / 10000).toLocaleString('pl-PL')} m².`, 16, 250);
   layout.font(7.5, false, PDF_MUTED);
   doc.text(doc.splitTextToSize(PDF_ROOF_HEIGHT_NOTICE,178), 16, 264);
 
@@ -682,6 +703,29 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   drawElevationPlan(doc, config, 'left', 'Elewacja lewa', 120, 180, 66, 38,sharedRoof,unitIndex===0 ? assembly.firstX : assembly.secondX);
   drawTechnicalLegend(doc, 232, true);
   layout.font(6.8,false,PDF_MUTED);doc.text(doc.splitTextToSize(PDF_ROOF_HEIGHT_NOTICE,178),16,267);
+
+  // Osobna karta każdej ściany usuwa dwuznaczność: podajemy oba odsadzenia,
+  // wysokość nad posadzką i pełny wymiar każdego otworu.
+  for (const wall of orderedWalls) {
+    const wallElements = config.elements.filter(element => element.wall === wall);
+    if (!wallElements.length) continue;
+    layout.page(`Dokładne wymiary · ${faceNames[wall].toLowerCase()}${unitLabel}`);
+    layout.font(9, false, PDF_MUTED);
+    doc.text(`Wymiary produkcyjne otworów na ścianie: ${faceNames[wall].toLowerCase()}. Wszystkie wartości w centymetrach.`, 16, 55);
+    drawPdfCard(doc, 16, 65, 178, 104, '#f8fafc');
+    drawElevationPlan(doc, config, wall, `Ściana · ${faceNames[wall].toLowerCase()}`, 29, 101, 152, 48, sharedRoof, unitIndex === 0 ? assembly.firstX : assembly.secondX);
+    const wallWidth = wall === 'front' || wall === 'back' ? config.width : config.length;
+    const rows = wallElements.map((element, index) => {
+      const left = Math.max(0, Math.min(wallWidth - element.width, wallWidth / 2 + element.x - element.width / 2));
+      const right = Math.max(0, wallWidth - left - element.width);
+      return [
+        String(index + 1).padStart(2, '0'), elementDescription(element).replace('\n', ' / '),
+        `${Math.round(left)}`, `${element.width}`, `${Math.round(right)}`,
+        `${Math.round(element.y)}`, `${element.height}`,
+      ];
+    });
+    layout.table(['LP.', 'ELEMENT', 'OD LEWEJ', 'SZER.', 'OD PRAWEJ', 'OD POSADZKI', 'WYS.'], rows, [12, 46, 23, 20, 23, 30, 24], 181, 'Wymiary otworów - ciąg dalszy');
+  }
 
   if (getFrontCanopy(config)) {
     layout.page('Wypust dachu PIR' + unitLabel);
@@ -709,7 +753,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   }
 
   for (let index = 0; index < availableViews.length; index += 2) {
-    layout.page('Wizualizacje Twojego garażu');
+    layout.page(`Wizualizacje · ${productName}`);
     layout.font(9, false, PDF_MUTED);
     doc.text('Widoki tej samej konfiguracji. Kolory mają charakter poglądowy.', 16, 55);
     availableViews.slice(index, index + 2).forEach((wall, localIndex) => {
@@ -745,7 +789,7 @@ export async function generateOfferPdf(input: OfferPdfInput) {
     layout.font(8.5, true);
     doc.text('TWÓJ MODEL AR', 169, 118, { align: 'center' });
     layout.font(7.5, false, PDF_MUTED);
-    doc.text('Zeskanuj telefonem, aby\nzobaczyć model garażu.', 169, 125, { align: 'center', lineHeightFactor: 1.35 });
+    doc.text(`Zeskanuj telefonem, aby\nzobaczyć model ${productNameGenitive}.`, 169, 125, { align: 'center', lineHeightFactor: 1.35 });
     doc.setFillColor(accent);
     doc.roundedRect(150, 137, 38, 8, 1.5, 1.5, 'F');
     layout.font(7.5, true, '#ffffff');
@@ -787,6 +831,10 @@ export async function generateOfferPdf(input: OfferPdfInput) {
   });
   layout.footers();
   const safeNumber = safeText(input.offerNumber, 60).replace(/[^a-zA-Z0-9_-]+/g, '-');
-  doc.save(`oferta-${safeNumber || Date.now()}.pdf`);
+  if (options.download !== false) {
+    doc.save(`oferta-${safeNumber || Date.now()}.pdf`);
+    return;
+  }
+  return doc.output('arraybuffer');
 }
 
